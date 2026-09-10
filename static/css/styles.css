@@ -574,6 +574,21 @@ body {
   opacity: 0;
 }
 
+.tab-filter-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00f0ff;
+  box-shadow: 0 0 6px #00f0ff;
+  display: inline-block;
+  margin-left: 3px;
+  flex-shrink: 0;
+}
+
+.tab-filter-dot.hidden {
+  display: none !important;
+}
+
 .tab-divider {
   width: 1px;
   height: 18px;
@@ -780,7 +795,7 @@ body {
 /* Layer Dossier Panel: Fitted Width */
 .dropdown-panel {
   margin-top: 8px;
-  width: 252px;
+  width: 265px;
   max-height: calc(100vh - 120px);
   background: rgba(11, 15, 25, 0.92);
   backdrop-filter: blur(20px);
@@ -1020,7 +1035,13 @@ input:checked + .slider:before {
 .dot.orange { background-color: #f97316; }
 .dot.blue { background-color: #38bdf8; }
 
-/* Filter fields */
+/* Spatial Filter Components */
+.filter-controls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
 .filter-field {
   display: flex;
   flex-direction: column;
@@ -1028,36 +1049,110 @@ input:checked + .slider:before {
 }
 
 .filter-field label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.filter-field select {
+.filter-field label i {
+  font-size: 11px;
+  width: 14px;
+  text-align: center;
+}
+
+.filter-select,
+.filter-input {
+  width: 100%;
   height: 32px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
   color: #fff;
-  padding: 0 8px;
-  font-size: 11.5px;
+  padding: 0 10px;
+  font-size: 12px;
   font-family: var(--font-sans);
-}
-
-.filter-field select:focus {
   outline: none;
-  border-color: var(--primary);
+  transition: all 0.18s ease;
 }
 
-.filter-actions {
+.filter-select option {
+  background: #0f172a;
+  color: #fff;
+}
+
+.filter-select:focus,
+.filter-input:focus {
+  border-color: rgba(16, 185, 129, 0.6);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+}
+
+.filter-plot-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.filter-status-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #34d399;
+}
+
+.filter-status-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-status-box.error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+.filter-status-box.hidden {
+  display: none !important;
+}
+
+.btn-clear-filter-mini {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 11px;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.btn-clear-filter-mini:hover {
+  opacity: 1;
+}
+
+.filter-actions-row {
   display: flex;
   gap: 8px;
   margin-top: 4px;
 }
 
-.filter-actions .btn {
+.filter-actions-row .btn {
   flex: 1;
   justify-content: center;
+  height: 32px;
+  font-size: 12px;
 }
 
 /* ================= Right Drawer: Parcel Dossier (Minimalist & Lightweight) ================= */

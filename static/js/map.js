@@ -193,7 +193,8 @@ const MapEngine = {
     beatBoundaries: null,
     beatLabels: null,
     encroachments: null,
-    highlight: null
+    highlight: null,
+    filterHighlight: null
   },
   geoLayers: {
     allPlots: null,
@@ -269,6 +270,7 @@ const MapEngine = {
     this.layers.beatLabels = L.featureGroup([], { pane: 'labelPane' }).addTo(this.map);
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
     this.layers.highlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
+    this.layers.filterHighlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
 
     this.labelLayer = new PlotLabelLayer();
     this.map.addLayer(this.labelLayer);
@@ -941,6 +943,101 @@ const MapEngine = {
     if (this.layers.highlight) {
       this.layers.highlight.clearLayers();
     }
+  },
+
+  applyFilter(criteria) {
+    if (!criteria) return { count: 0, matches: [] };
+    const { beat, mouza, plotNo } = criteria;
+
+    const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+    if (!allFeatures.length) {
+      return { count: 0, matches: [] };
+    }
+
+    const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const cleanPlot = (s) => String(s || '').trim().toLowerCase().replace(/^#/, '');
+
+    const targetBeat = beat ? norm(beat).replace(/\s*beat$/i, '') : '';
+    const targetMouza = mouza ? norm(mouza) : '';
+    const targetPlot = plotNo ? cleanPlot(plotNo) : '';
+
+    const matches = allFeatures.filter(f => {
+      const p = f.properties || {};
+      if (targetBeat) {
+        const pBeat = norm(p.beat_name || '').replace(/\s*beat$/i, '');
+        if (pBeat !== targetBeat) return false;
+      }
+      if (targetMouza) {
+        const pMouza = norm(p.mouza || '');
+        if (pMouza !== targetMouza) return false;
+      }
+      if (targetPlot) {
+        const pPlot = cleanPlot(p.plot_no);
+        if (pPlot !== targetPlot) return false;
+      }
+      return true;
+    });
+
+    if (this.layers.filterHighlight) {
+      this.layers.filterHighlight.clearLayers();
+    }
+    this.clearHighlight();
+
+    if (matches.length === 0) {
+      // If no individual plot matched but a Beat was selected, check if we can zoom to the Beat Boundary
+      if (targetBeat && this.rawBeatData && this.rawBeatData.features) {
+        const beatFeat = this.rawBeatData.features.find(f => {
+          const bName = norm((f.properties && f.properties.beat_name) || '').replace(/\s*beat$/i, '');
+          const rName = norm((f.properties && f.properties.raw_name) || '').replace(/\s*beat$/i, '');
+          return bName === targetBeat || rName === targetBeat;
+        });
+        if (beatFeat) {
+          this.flyToBeat(beatFeat.properties);
+          return { count: 0, matches: [], beatOnly: true, beatName: beatFeat.properties.beat_name };
+        }
+      }
+      return { count: 0, matches: [] };
+    }
+
+    // 1 parcel matched: select plot directly and open Dossier
+    if (matches.length === 1) {
+      this.selectPlot('cs_plot', matches[0]);
+      const bounds = this.getFeatureBounds(matches[0]);
+      if (bounds && bounds.length === 4) {
+        this.map.fitBounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]], { maxZoom: 18, padding: [60, 60] });
+      } else {
+        const c = this.getFeatureCenter(matches[0]);
+        if (c) this.map.setView(c, 18, { animate: true });
+      }
+    } else {
+      // Multiple parcels matched: render bright highlight layer and fit bounds
+      L.geoJSON(matches, {
+        pane: 'highlightPane',
+        style: () => ({
+          color: '#00f0ff',
+          weight: 2.8,
+          opacity: 1.0,
+          fillColor: '#00f0ff',
+          fillOpacity: 0.28
+        }),
+        interactive: false
+      }).addTo(this.layers.filterHighlight);
+
+      const group = L.geoJSON(matches);
+      const b = group.getBounds();
+      if (b.isValid()) {
+        this.map.fitBounds(b, { padding: [40, 40], maxZoom: 16 });
+      }
+    }
+
+    return { count: matches.length, matches };
+  },
+
+  clearFilter() {
+    if (this.layers.filterHighlight) {
+      this.layers.filterHighlight.clearLayers();
+    }
+    this.clearHighlight();
   },
 
   getFeatureCenter(feature) {

@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_05" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_06" />
 </head>
 <body>
   <div id="app-container">
@@ -90,6 +90,11 @@
           <button class="tab-btn active" id="tabBtnLayers" role="tab" title="Cadastral Layers">
             <i class="fa-solid fa-layer-group"></i>
             <span>Layers</span>
+          </button>
+          <button class="tab-btn" id="tabBtnFilter" role="tab" title="Spatial Filter">
+            <i class="fa-solid fa-filter"></i>
+            <span>Filter</span>
+            <span class="tab-filter-dot hidden" id="tabFilterDot"></span>
           </button>
           <div class="tab-divider"></div>
           <div class="expandable-search-container" id="expandableSearchContainer">
@@ -181,6 +186,80 @@
               </div>
 
             </div>
+
+            <!-- View 2: Spatial Filter -->
+            <div class="flyout-view hidden" id="viewFilter">
+              <div class="filter-controls-container">
+                
+                <!-- Beat Selection -->
+                <div class="filter-field">
+                  <label for="filterBeatSelect">
+                    <i class="fa-solid fa-tree-city" style="color: #38bdf8;"></i> Forest Beat
+                  </label>
+                  <select id="filterBeatSelect" class="filter-select">
+                    <option value="">All Beats</option>
+                    <option value="Park Beat">Park Beat</option>
+                    <option value="Bankhoira">Bankhoira Beat</option>
+                    <option value="Baruipara">Baruipara Beat</option>
+                    <option value="Rajendrapur West">Rajendrapur West Beat</option>
+                    <option value="BK Bari">BK Bari Beat</option>
+                    <option value="Bhabanipur">Bhabanipur Beat</option>
+                    <option value="Baupara">Baupara Beat</option>
+                  </select>
+                </div>
+
+                <!-- Mouza Selection -->
+                <div class="filter-field">
+                  <label for="filterMouzaSelect">
+                    <i class="fa-solid fa-map-location-dot" style="color: #c084fc;"></i> Mouza
+                  </label>
+                  <select id="filterMouzaSelect" class="filter-select">
+                    <option value="">All Mouzas</option>
+                    <option value="Araishprashad">Araishprashad</option>
+                    <option value="B K Bari">B K Bari</option>
+                    <option value="Bahadurpur">Bahadurpur</option>
+                    <option value="Bankhoira">Bankhoira</option>
+                    <option value="Barui Para">Barui Para</option>
+                    <option value="Baupara">Baupara</option>
+                    <option value="Mahona Bhabanipur">Mahona Bhabanipur</option>
+                    <option value="Uttar Salna">Uttar Salna</option>
+                  </select>
+                </div>
+
+                <!-- Plot Selection / Autocomplete -->
+                <div class="filter-field">
+                  <label for="filterPlotInput">
+                    <i class="fa-solid fa-draw-polygon" style="color: #34d399;"></i> Plot Number
+                  </label>
+                  <div class="filter-plot-input-wrapper">
+                    <input type="text" id="filterPlotInput" class="filter-input" placeholder="e.g. 468 or select..." list="filterPlotList" autocomplete="off" />
+                    <datalist id="filterPlotList"></datalist>
+                  </div>
+                </div>
+
+                <!-- Filter Status Box -->
+                <div id="filterStatusBox" class="filter-status-box hidden">
+                  <div class="filter-status-info">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span id="filterStatusText">0 plots found</span>
+                  </div>
+                  <button type="button" class="btn-clear-filter-mini" id="btnClearFilterMini" title="Clear filter">
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="filter-actions-row">
+                  <button type="button" class="btn btn-primary btn-sm" id="btnApplyFilter">
+                    <i class="fa-solid fa-filter"></i> Apply
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnResetFilter">
+                    <i class="fa-solid fa-rotate-left"></i> Reset
+                  </button>
+                </div>
+
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -220,8 +299,8 @@
   </script>
   <!-- Leaflet & App Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/static/js/dossier.js?v=20260911_05"></script>
-  <script src="/static/js/map.js?v=20260911_05"></script>
-  <script src="/static/js/app.js?v=20260911_05"></script>
+  <script src="/static/js/dossier.js?v=20260911_06"></script>
+  <script src="/static/js/map.js?v=20260911_06"></script>
+  <script src="/static/js/app.js?v=20260911_06"></script>
 </body>
 </html>

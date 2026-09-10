@@ -16,26 +16,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupHorizontalWidget();
   setupBasemapSwitcher();
   setupLayerToggles();
+  setupSpatialFilter();
   setupSearchAutocomplete();
   setupExportCSV();
 });
 
 function setupHorizontalWidget() {
   const tabBtnLayers = document.getElementById('tabBtnLayers');
+  const tabBtnFilter = document.getElementById('tabBtnFilter');
   const dropdownPanel = document.getElementById('dropdownPanel');
+  const panelHeaderTitle = document.getElementById('panelHeaderTitle');
+  const viewLayers = document.getElementById('viewLayers');
+  const viewFilter = document.getElementById('viewFilter');
   const btnCloseDropdownPanel = document.getElementById('btnCloseDropdownPanel');
   const btnCloseDossier = document.getElementById('btnCloseDossier');
 
-  window.openLayersPanel = function() {
-    if (dropdownPanel) dropdownPanel.classList.remove('collapsed');
-    if (tabBtnLayers) tabBtnLayers.classList.add('active');
-    // Collapse search when opening layers
+  let currentTab = 'layers';
+
+  window.switchPanelTab = function(tab) {
+    currentTab = tab;
     if (window.closeSearchWidget) window.closeSearchWidget();
+    if (dropdownPanel) dropdownPanel.classList.remove('collapsed');
+
+    if (tab === 'layers') {
+      if (tabBtnLayers) tabBtnLayers.classList.add('active');
+      if (tabBtnFilter) tabBtnFilter.classList.remove('active');
+      if (panelHeaderTitle) panelHeaderTitle.innerHTML = '<i class="fa-solid fa-layer-group"></i> Layers';
+      if (viewLayers) viewLayers.classList.remove('hidden');
+      if (viewFilter) viewFilter.classList.add('hidden');
+    } else if (tab === 'filter') {
+      if (tabBtnFilter) tabBtnFilter.classList.add('active');
+      if (tabBtnLayers) tabBtnLayers.classList.remove('active');
+      if (panelHeaderTitle) panelHeaderTitle.innerHTML = '<i class="fa-solid fa-filter"></i> Spatial Filter';
+      if (viewFilter) viewFilter.classList.remove('hidden');
+      if (viewLayers) viewLayers.classList.add('hidden');
+    }
+  };
+
+  window.openLayersPanel = function(tab = 'layers') {
+    window.switchPanelTab(tab);
   };
 
   window.closeLayersPanel = function() {
     if (dropdownPanel) dropdownPanel.classList.add('collapsed');
     if (tabBtnLayers) tabBtnLayers.classList.remove('active');
+    if (tabBtnFilter) tabBtnFilter.classList.remove('active');
   };
 
   window.isLayersPanelOpen = function() {
@@ -44,10 +69,20 @@ function setupHorizontalWidget() {
 
   if (tabBtnLayers) {
     tabBtnLayers.addEventListener('click', () => {
-      if (window.isLayersPanelOpen()) {
+      if (window.isLayersPanelOpen() && currentTab === 'layers') {
         window.closeLayersPanel();
       } else {
-        window.openLayersPanel();
+        window.switchPanelTab('layers');
+      }
+    });
+  }
+
+  if (tabBtnFilter) {
+    tabBtnFilter.addEventListener('click', () => {
+      if (window.isLayersPanelOpen() && currentTab === 'filter') {
+        window.closeLayersPanel();
+      } else {
+        window.switchPanelTab('filter');
       }
     });
   }
@@ -168,6 +203,191 @@ function setupLayerToggles() {
     btnQuickEncroach.addEventListener('click', () => {
       MapEngine.focusEncroachments();
     });
+  }
+}
+
+function setupSpatialFilter() {
+  const beatSelect = document.getElementById('filterBeatSelect');
+  const mouzaSelect = document.getElementById('filterMouzaSelect');
+  const plotInput = document.getElementById('filterPlotInput');
+  const plotList = document.getElementById('filterPlotList');
+  const statusBox = document.getElementById('filterStatusBox');
+  const statusText = document.getElementById('filterStatusText');
+  const btnClearMini = document.getElementById('btnClearFilterMini');
+  const btnApply = document.getElementById('btnApplyFilter');
+  const btnReset = document.getElementById('btnResetFilter');
+  const filterDot = document.getElementById('tabFilterDot');
+
+  if (!btnApply || !beatSelect || !mouzaSelect) return;
+
+  const beatMouzaMap = {
+    'Park Beat': ['Araishprashad', 'Barui Para'],
+    'Bankhoira': ['Bankhoira'],
+    'Baruipara': ['Barui Para'],
+    'Rajendrapur West': ['Barui Para'],
+    'BK Bari': ['B K Bari'],
+    'Bhabanipur': ['Barui Para', 'Mahona Bhabanipur'],
+    'Baupara': ['Araishprashad', 'Bahadurpur', 'Baupara', 'Uttar Salna']
+  };
+
+  const allMouzas = [
+    'Araishprashad',
+    'B K Bari',
+    'Bahadurpur',
+    'Bankhoira',
+    'Barui Para',
+    'Baupara',
+    'Mahona Bhabanipur',
+    'Uttar Salna'
+  ];
+
+  function updateMouzaOptions(selectedBeat) {
+    const currentVal = mouzaSelect.value;
+    mouzaSelect.innerHTML = '<option value="">All Mouzas</option>';
+    
+    let validMouzas = allMouzas;
+    if (selectedBeat && beatMouzaMap[selectedBeat]) {
+      validMouzas = beatMouzaMap[selectedBeat];
+    }
+
+    validMouzas.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      mouzaSelect.appendChild(opt);
+    });
+
+    if (currentVal && validMouzas.includes(currentVal)) {
+      mouzaSelect.value = currentVal;
+    } else {
+      mouzaSelect.value = '';
+    }
+  }
+
+  function updatePlotDatalist() {
+    if (!plotList) return;
+    const selectedBeat = beatSelect.value.trim();
+    const selectedMouza = mouzaSelect.value.trim();
+
+    const features = MapEngine.currentCSFeatures || (MapEngine.rawCSData && MapEngine.rawCSData.features) || [];
+    if (!features.length) return;
+
+    const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const targetBeat = selectedBeat ? norm(selectedBeat).replace(/\s*beat$/i, '') : '';
+    const targetMouza = selectedMouza ? norm(selectedMouza) : '';
+
+    const plotNos = new Set();
+    for (let i = 0; i < features.length; i++) {
+      const p = features[i].properties || {};
+      if (targetBeat) {
+        const pBeat = norm(p.beat_name || '').replace(/\s*beat$/i, '');
+        if (pBeat !== targetBeat) continue;
+      }
+      if (targetMouza) {
+        const pMouza = norm(p.mouza || '');
+        if (pMouza !== targetMouza) continue;
+      }
+      if (p.plot_no) {
+        plotNos.add(String(p.plot_no).trim());
+      }
+    }
+
+    const sorted = Array.from(plotNos).sort((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+
+    plotList.innerHTML = sorted.slice(0, 1000).map(p => `<option value="${p}">Plot #${p}</option>`).join('');
+  }
+
+  beatSelect.addEventListener('change', () => {
+    updateMouzaOptions(beatSelect.value);
+    updatePlotDatalist();
+  });
+
+  mouzaSelect.addEventListener('change', () => {
+    updatePlotDatalist();
+  });
+
+  setTimeout(updatePlotDatalist, 1500);
+
+  function executeFilter() {
+    const beat = beatSelect.value.trim();
+    const mouza = mouzaSelect.value.trim();
+    const plotNo = plotInput.value.trim();
+
+    if (!beat && !mouza && !plotNo) {
+      if (statusBox) {
+        statusBox.classList.remove('hidden');
+        statusBox.classList.add('error');
+        if (statusText) statusText.textContent = 'Please select a Beat, Mouza, or Plot #';
+      }
+      return;
+    }
+
+    const res = MapEngine.applyFilter({ beat, mouza, plotNo });
+
+    if (res.count > 0) {
+      if (statusBox) {
+        statusBox.classList.remove('hidden', 'error');
+        let detailParts = [];
+        if (beat) detailParts.push(beat.endsWith('Beat') ? beat : `${beat} Beat`);
+        if (mouza) detailParts.push(mouza);
+        if (plotNo) detailParts.push(`Plot #${plotNo}`);
+        const labelStr = detailParts.join(' • ');
+        if (statusText) {
+          statusText.textContent = res.count === 1 ? `Plot #${res.matches[0].properties.plot_no} Found (${res.matches[0].properties.mouza || ''})` : `${res.count} Plots Found (${labelStr})`;
+        }
+      }
+      if (filterDot) filterDot.classList.remove('hidden');
+    } else if (res.beatOnly) {
+      if (statusBox) {
+        statusBox.classList.remove('hidden', 'error');
+        if (statusText) statusText.textContent = `Zoomed to ${res.beatName} Boundary`;
+      }
+      if (filterDot) filterDot.classList.remove('hidden');
+    } else {
+      if (statusBox) {
+        statusBox.classList.remove('hidden');
+        statusBox.classList.add('error');
+        if (statusText) statusText.textContent = 'No matching parcels found';
+      }
+      if (filterDot) filterDot.classList.add('hidden');
+    }
+  }
+
+  btnApply.addEventListener('click', executeFilter);
+
+  plotInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      executeFilter();
+    }
+  });
+
+  function resetFilter() {
+    beatSelect.value = '';
+    updateMouzaOptions('');
+    mouzaSelect.value = '';
+    plotInput.value = '';
+    updatePlotDatalist();
+
+    MapEngine.clearFilter();
+
+    if (statusBox) {
+      statusBox.classList.add('hidden');
+      statusBox.classList.remove('error');
+    }
+    if (filterDot) {
+      filterDot.classList.add('hidden');
+    }
+  }
+
+  btnReset.addEventListener('click', resetFilter);
+  if (btnClearMini) {
+    btnClearMini.addEventListener('click', resetFilter);
   }
 }
 
