@@ -908,6 +908,7 @@ body {
 }
 
 .beat-map-label {
+  display: inline-block;
   transform: translate(-50%, -50%);
   color: #e0f2fe;
   font-family: 'Plus Jakarta Sans', var(--font-sans);

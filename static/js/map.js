@@ -699,11 +699,47 @@ const MapEngine = {
     geoLayer.addTo(this.layers.beatBoundaries);
 
     // 2. Static Beat Name Labels (visible when zoom < 15, toggled with plot labels)
+
+    // Compute geometric centroid of a polygon ring using the signed-area formula
+    function ringCentroid(ring) {
+      let area = 0, cx = 0, cy = 0;
+      for (let j = 0, k = ring.length - 1; j < ring.length; k = j++) {
+        const xj = ring[j][0], yj = ring[j][1];
+        const xk = ring[k][0], yk = ring[k][1];
+        const f = xj * yk - xk * yj;
+        cx   += (xj + xk) * f;
+        cy   += (yj + yk) * f;
+        area += f;
+      }
+      area *= 0.5;
+      const inv = 1 / (6 * area);
+      return [cy * inv, cx * inv]; // [lat, lng]
+    }
+
+    function geometricCentroid(geometry) {
+      if (!geometry) return null;
+      let ring = null;
+      if (geometry.type === 'Polygon' && geometry.coordinates && geometry.coordinates[0]) {
+        ring = geometry.coordinates[0];
+      } else if (geometry.type === 'MultiPolygon' && geometry.coordinates) {
+        // Use the largest ring by vertex count
+        for (const poly of geometry.coordinates) {
+          if (poly[0] && (!ring || poly[0].length > ring.length)) ring = poly[0];
+        }
+      }
+      if (!ring || ring.length < 3) return null;
+      return ringCentroid(ring);
+    }
+
     for (let i = 0; i < geojsonData.features.length; i++) {
       const feat = geojsonData.features[i];
       const p = feat.properties || {};
-      const lat = p.center_lat;
-      const lng = p.center_lng;
+
+      // Prefer computed geometric centroid; fall back to stored center values
+      let centroid = geometricCentroid(feat.geometry);
+      const lat = centroid ? centroid[0] : p.center_lat;
+      const lng = centroid ? centroid[1] : p.center_lng;
+
       let rawName = (p.raw_name || p.beat_name || 'Beat').trim();
       let displayName = rawName;
       if (!displayName.toLowerCase().endsWith('beat')) {
@@ -725,6 +761,7 @@ const MapEngine = {
         }).addTo(this.layers.beatLabels);
       }
     }
+
 
     this.updateBeatLabelsVisibility();
   },
