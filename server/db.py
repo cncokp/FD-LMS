@@ -133,6 +133,7 @@ def _assemble_features_json(rows: List[Dict[str, Any]]) -> bytes:
         if ry2 > maxy_agg: maxy_agg = ry2
 
         pid = r["id"]
+        uid_val = json.dumps(str(r["uid"]) if r.get("uid") is not None else "")
         pno = json.dumps(r["plot_no"] or "")
         mouza = json.dumps(r["mouza"] or "")
         jl = json.dumps(r["jl_no"] or "")
@@ -146,7 +147,7 @@ def _assemble_features_json(rows: List[Dict[str, Any]]) -> bytes:
 
         feat_strs.append(
             f'{{"type":"Feature","id":{pid},'
-            f'"properties":{{"id":{pid},"plot_no":{pno},"mouza":{mouza},"jl_no":{jl},"beat_name":{beat},'
+            f'"properties":{{"id":{pid},"uid":{uid_val},"plot_no":{pno},"mouza":{mouza},"jl_no":{jl},"beat_name":{beat},'
             f'"area_acre":{area},"label_lat":{llat},"label_lng":{llng},"label_radius":{lrad}}},'
             f'"geometry":{geom_str}}}'
         )
@@ -185,7 +186,7 @@ def _get_cs_plots_supabase_api(bbox, plot_no, uid, limit, is_unfiltered) -> byte
 
     if plot_no or uid:
         query_param = f"plot_no=eq.{urllib.parse.quote(plot_no)}" if plot_no else f"uid=eq.{urllib.parse.quote(uid)}"
-        url_path = f"cs_plots?{query_param}&select=id,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson"
+        url_path = f"cs_plots?{query_param}&select=id,uid,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson"
         resp = _supabase_request(url_path)
         rows = json.loads(resp.read().decode("utf-8"))
         return _assemble_features_json(rows)
@@ -193,7 +194,7 @@ def _get_cs_plots_supabase_api(bbox, plot_no, uid, limit, is_unfiltered) -> byte
     if bbox:
         try:
             minx, miny, maxx, maxy = map(float, bbox.split(","))
-            url_path = f"cs_plots?minx=lte.{maxx}&maxx=gte.{minx}&miny=lte.{maxy}&maxy=gte.{miny}&select=id,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson&limit={limit}"
+            url_path = f"cs_plots?minx=lte.{maxx}&maxx=gte.{minx}&miny=lte.{maxy}&maxy=gte.{miny}&select=id,uid,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson&limit={limit}"
             resp = _supabase_request(url_path)
             rows = json.loads(resp.read().decode("utf-8"))
             return _assemble_features_json(rows)
@@ -203,7 +204,7 @@ def _get_cs_plots_supabase_api(bbox, plot_no, uid, limit, is_unfiltered) -> byte
     # Full unfiltered dataset: fetch in concurrent chunks of 1000
     def fetch_chunk(start, end):
         r = _supabase_request(
-            "cs_plots?select=id,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson&order=id",
+            "cs_plots?select=id,uid,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson&order=id",
             headers_extra={"Range": f"{start}-{end}"}
         )
         return json.loads(r.read().decode("utf-8"))
@@ -245,7 +246,7 @@ def _get_cs_plots_supabase_pg(bbox, plot_no, uid, limit, is_unfiltered) -> bytes
 
             where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             query = f"""
-            SELECT id, plot_no, mouza, jl_no, area_acre, beat_name,
+            SELECT id, uid, plot_no, mouza, jl_no, area_acre, beat_name,
                    label_lat, label_lng, label_radius,
                    minx, maxx, miny, maxy, geojson::text
             FROM cs_plots
@@ -293,7 +294,7 @@ def _get_cs_plots_sqlite(bbox, plot_no, uid, limit, is_unfiltered) -> bytes:
 
         where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
         query = f"""
-        SELECT p.id, p.plot_no, p.mouza, p.jl_no, p.area_acre, p.beat_name,
+        SELECT p.id, p.uid, p.plot_no, p.mouza, p.jl_no, p.area_acre, p.beat_name,
                p.label_lat, p.label_lng, p.label_radius,
                p.minx, p.maxx, p.miny, p.maxy, p.geojson
         FROM cs_plots p
@@ -308,10 +309,10 @@ def _get_cs_plots_sqlite(bbox, plot_no, uid, limit, is_unfiltered) -> bytes:
         parsed_rows = []
         for r in rows:
             parsed_rows.append({
-                "id": r[0], "plot_no": r[1], "mouza": r[2], "jl_no": r[3],
-                "area_acre": r[4], "beat_name": r[5], "label_lat": r[6],
-                "label_lng": r[7], "label_radius": r[8], "minx": r[9],
-                "maxx": r[10], "miny": r[11], "maxy": r[12], "geojson": r[13]
+                "id": r[0], "uid": r[1], "plot_no": r[2], "mouza": r[3], "jl_no": r[4],
+                "area_acre": r[5], "beat_name": r[6], "label_lat": r[7],
+                "label_lng": r[8], "label_radius": r[9], "minx": r[10],
+                "maxx": r[11], "miny": r[12], "maxy": r[13], "geojson": r[14]
             })
 
         result_bytes = _assemble_features_json(parsed_rows)
@@ -331,11 +332,13 @@ def get_rs_plots_json_bytes(
 def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dict[str, Any]]) -> Dict[str, Any]:
     bounds = [plot["minx"], plot["miny"], plot["maxx"], plot["maxy"]]
     beat_name = plot.get("beat_name")
+    plot_uid = str(plot.get("uid") or "")
 
     if not parcel_records:
         return {
             "plot": {
                 "id": plot["id"],
+                "uid": plot_uid,
                 "plot_no": plot["plot_no"],
                 "mouza": plot["mouza"] or "N/A",
                 "jl_no": plot["jl_no"] or "N/A",
@@ -346,24 +349,50 @@ def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dic
             "bounds": bounds,
             "parcel_info": {
                 "has_record": False,
+                "cs_uid": plot_uid,
+                "cs_plot_no": plot["plot_no"],
+                "mouza": plot["mouza"],
+                "cs_jl": plot["jl_no"],
+                "beat_name": beat_name,
+                "range": None,
+                "total_area": plot["area_acre"],
+                "total_area_fd": None,
+                "total_area_others": None,
                 "linked_rs_plots": []
             }
         }
 
     first_rec = parcel_records[0]
-    effective_beat = beat_name or first_rec.get("beat_name")
+    effective_beat = first_rec.get("beat_name") or beat_name
     range_val = first_rec.get("range")
+    cs_plot_no = first_rec.get("cs_plot_no") or plot["plot_no"]
+    mouza = first_rec.get("mouza") or plot["mouza"] or "N/A"
+    cs_jl = first_rec.get("cs_jl") or plot["jl_no"] or "N/A"
+
+    # Find recorded CS land acreage from Parcel Info db
+    cs_land_acre = next((r["cs_land_acre"] for r in parcel_records if r.get("cs_land_acre") is not None), None)
 
     # Collect unique legal statuses, khatians, remarks
     legal_statuses = list(dict.fromkeys(r.get("legal_status") for r in parcel_records if r.get("legal_status")))
     khatians = list(dict.fromkeys(r.get("khatian_no") for r in parcel_records if r.get("khatian_no")))
     remarks_list = list(dict.fromkeys(r.get("remarks") for r in parcel_records if r.get("remarks")))
 
-    # Aggregate areas
+    # Aggregate areas from Parcel Info db
     fd_areas = [r["area_fd"] for r in parcel_records if r.get("area_fd") is not None]
     others_areas = [r["area_others"] for r in parcel_records if r.get("area_others") is not None]
     total_area_fd = round(sum(fd_areas), 4) if fd_areas else None
     total_area_others = round(sum(others_areas), 4) if others_areas else None
+
+    # Total recorded area calculation
+    rs_total_areas = [r["total_area"] for r in parcel_records if r.get("total_area") is not None]
+    if cs_land_acre is not None:
+        recorded_total_area = cs_land_acre
+    elif rs_total_areas:
+        recorded_total_area = round(sum(rs_total_areas), 4)
+    elif total_area_fd is not None or total_area_others is not None:
+        recorded_total_area = round((total_area_fd or 0) + (total_area_others or 0), 4)
+    else:
+        recorded_total_area = plot.get("area_acre")
 
     # Linked RS survey plots list
     linked_rs = []
@@ -383,6 +412,7 @@ def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dic
     return {
         "plot": {
             "id": plot["id"],
+            "uid": plot_uid,
             "plot_no": plot["plot_no"],
             "mouza": plot["mouza"] or "N/A",
             "jl_no": plot["jl_no"] or "N/A",
@@ -393,12 +423,18 @@ def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dic
         "bounds": bounds,
         "parcel_info": {
             "has_record": True,
+            "cs_uid": first_rec.get("cs_uid") or plot_uid,
+            "cs_plot_no": cs_plot_no,
+            "mouza": mouza,
+            "cs_jl": cs_jl,
             "beat_name": effective_beat,
             "range": range_val,
-            "legal_status": ", ".join(legal_statuses) if legal_statuses else None,
-            "khatian_no": ", ".join(khatians) if khatians else None,
+            "cs_land_acre": recorded_total_area,
+            "total_area": recorded_total_area,
             "total_area_fd": total_area_fd,
             "total_area_others": total_area_others,
+            "legal_status": ", ".join(legal_statuses) if legal_statuses else None,
+            "khatian_no": ", ".join(khatians) if khatians else None,
             "remarks": "; ".join(remarks_list) if remarks_list else None,
             "linked_rs_plots": linked_rs
         }
@@ -492,16 +528,17 @@ def search_records(query: str, limit: int = 15) -> List[Dict[str, Any]]:
             conn = get_pg_connection()
             cur = conn.cursor()
             cur.execute("""
-            SELECT id, plot_no, mouza, jl_no, area_acre, beat_name, minx, maxx, miny, maxy
+            SELECT id, uid, plot_no, mouza, jl_no, area_acre, beat_name, minx, maxx, miny, maxy
             FROM cs_plots 
-            WHERE plot_no = %s OR plot_no LIKE %s OR mouza ILIKE %s OR jl_no = %s
+            WHERE plot_no = %s OR plot_no LIKE %s OR uid = %s OR uid LIKE %s OR mouza ILIKE %s OR jl_no = %s
             ORDER BY 
                 (plot_no = %s) DESC,
+                (uid = %s) DESC,
                 (plot_no LIKE %s) DESC,
                 (mouza ILIKE %s) DESC,
                 id
             LIMIT %s
-            """, (q, f"{q}%", f"%{q}%", q, q, f"{q}%", f"%{q}%", limit))
+            """, (q, f"{q}%", q, f"{q}%", f"%{q}%", q, q, q, f"{q}%", f"%{q}%", limit))
             rows = [dict(r) for r in cur.fetchall()]
             conn.close()
             return _format_search_results(rows)
@@ -522,16 +559,17 @@ def search_records(query: str, limit: int = 15) -> List[Dict[str, Any]]:
     with get_sqlite_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
-        SELECT id, plot_no, mouza, jl_no, area_acre, beat_name, minx, maxx, miny, maxy
+        SELECT id, uid, plot_no, mouza, jl_no, area_acre, beat_name, minx, maxx, miny, maxy
         FROM cs_plots 
-        WHERE plot_no = ? OR plot_no LIKE ? OR mouza LIKE ? OR jl_no = ?
+        WHERE plot_no = ? OR plot_no LIKE ? OR uid = ? OR uid LIKE ? OR mouza LIKE ? OR jl_no = ?
         ORDER BY 
             (plot_no = ?) DESC,
+            (uid = ?) DESC,
             (plot_no LIKE ?) DESC,
             (mouza LIKE ?) DESC,
             id
         LIMIT ?
-        """, (q, f"{q}%", f"%{q}%", q, q, f"{q}%", f"%{q}%", limit))
+        """, (q, f"{q}%", q, f"{q}%", f"%{q}%", q, q, q, f"{q}%", f"%{q}%", limit))
         rows = [dict(r) for r in cur.fetchall()]
         return _format_search_results(rows)
 
@@ -545,9 +583,14 @@ def _format_search_results(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         subparts = [p for p in [mouza_str, jl_str] if p]
         sublabel = " | ".join(subparts) if subparts else "CS Cadastral Parcel"
 
+        uid_val = str(r.get("uid") or "")
+        if not uid_val and r.get("jl_no") and r.get("plot_no"):
+            uid_val = f"{r.get('jl_no')}{r.get('plot_no')}"
+
         results.append({
             "type": "cs_plot",
             "id": r["id"],
+            "uid": uid_val,
             "label": f"CS Plot #{r['plot_no']}",
             "sublabel": sublabel,
             "lat": center_lat,
@@ -555,6 +598,7 @@ def _format_search_results(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "bounds": [r["minx"], r["miny"], r["maxx"], r["maxy"]],
             "data": {
                 "id": r["id"],
+                "uid": uid_val,
                 "plot_no": r["plot_no"],
                 "mouza": r.get("mouza"),
                 "jl_no": r.get("jl_no"),

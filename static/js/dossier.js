@@ -23,7 +23,7 @@ const Dossier = {
    * Render CS Cadastral Plot Dossier
    */
   renderCSPlot(data) {
-    const p = data.plot;
+    const p = data.plot || {};
     const pi = data.parcel_info;
 
     this.currentPlotId = p.id;
@@ -31,17 +31,25 @@ const Dossier = {
     // Remove "CS Cadastral Parcel" text from the title
     if (this.badge) this.badge.style.display = 'none';
 
+    // Prioritize Parcel Info DB for all attributes in Parcel Identification Card
+    const displayPlotNo = (pi && pi.has_record && pi.cs_plot_no) ? pi.cs_plot_no : (p.plot_no || 'N/A');
+    const displayMouza = (pi && pi.has_record && pi.mouza) ? pi.mouza : (p.mouza || 'N/A');
+    const displayJl = (pi && pi.has_record && pi.cs_jl) ? pi.cs_jl : (p.jl_no || 'N/A');
+
     // Remain # in title
-    if (this.title) this.title.textContent = `Plot #${p.plot_no} ${p.mouza ? '• ' + p.mouza : ''}`;
+    if (this.title) {
+      this.title.textContent = `Plot #${displayPlotNo} ${displayMouza && displayMouza !== 'N/A' ? '• ' + displayMouza : ''}`;
+    }
 
-    const areaFormatted = p.area_acre != null 
-      ? Number(p.area_acre).toFixed(2) + ' Ac' 
-      : '0.00 Ac';
-
+    // Total Area & FD / Private Areas strictly from Parcel Info DB
+    let areaFormatted = '0.00 Ac';
     let fdAreaFormatted = '0.00 Ac';
     let othersAreaFormatted = '0.00 Ac';
 
     if (pi && pi.has_record) {
+      const totalAreaVal = pi.total_area != null ? pi.total_area : (pi.cs_land_acre != null ? pi.cs_land_acre : p.area_acre);
+      areaFormatted = totalAreaVal != null ? Number(totalAreaVal).toFixed(2) + ' Ac' : '0.00 Ac';
+
       if (pi.total_area_fd != null) {
         fdAreaFormatted = Number(pi.total_area_fd).toFixed(2) + ' Ac';
       }
@@ -49,11 +57,14 @@ const Dossier = {
         othersAreaFormatted = Number(pi.total_area_others).toFixed(2) + ' Ac';
       }
     } else if (data.loadingParcelInfo) {
+      areaFormatted = p.area_acre != null ? Number(p.area_acre).toFixed(2) + ' Ac' : '0.00 Ac';
       fdAreaFormatted = `<span style="font-size: 11px; color: #64748b;"><i class="fa-solid fa-spinner fa-spin"></i></span>`;
       othersAreaFormatted = `<span style="font-size: 11px; color: #64748b;"><i class="fa-solid fa-spinner fa-spin"></i></span>`;
+    } else {
+      areaFormatted = p.area_acre != null ? Number(p.area_acre).toFixed(2) + ' Ac' : '0.00 Ac';
     }
 
-    const effectiveBeat = p.beat_name || (pi && pi.beat_name);
+    const effectiveBeat = (pi && pi.has_record && pi.beat_name) ? pi.beat_name : (p.beat_name || (pi && pi.beat_name));
     const effectiveRange = pi && pi.range;
 
     const beatDisplay = effectiveBeat 
@@ -122,7 +133,7 @@ const Dossier = {
           <div class="dossier-prop">
             <span class="prop-label">Plot Number</span>
             <span class="prop-val mono" style="font-size: 14px; font-weight: 600; color: #f8fafc;">
-              ${p.plot_no || 'N/A'}
+              ${displayPlotNo}
             </span>
           </div>
 
@@ -150,14 +161,14 @@ const Dossier = {
           <div class="dossier-prop">
             <span class="prop-label">Mouza</span>
             <span class="prop-val" style="font-size: 13px; color: #e2e8f0;">
-              ${p.mouza || 'N/A'}
+              ${displayMouza}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">JL No</span>
             <span class="prop-val mono" style="font-size: 13px; color: #94a3b8;">
-              ${p.jl_no || 'N/A'}
+              ${displayJl}
             </span>
           </div>
 

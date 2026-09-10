@@ -129,7 +129,7 @@ const PlotLabelLayer = L.Layer.extend({
 });
 
 const SpatialCache = {
-  dbName: 'fd_lms_spatial_v7',
+  dbName: 'fd_lms_spatial_v8',
   storeName: 'datasets',
   dbPromise: null,
 
@@ -405,7 +405,19 @@ const MapEngine = {
 
     if (!feature) return;
 
-    L.geoJSON(feature, {
+    // Find and highlight all plots with the same UID
+    const targetUid = feature.properties ? feature.properties.uid : null;
+    let featuresToHighlight = [feature];
+
+    if (targetUid) {
+      const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+      const matches = allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid));
+      if (matches.length > 0) {
+        featuresToHighlight = matches;
+      }
+    }
+
+    L.geoJSON(featuresToHighlight, {
       pane: 'highlightPane',
       style: {
         color: '#00f0ff',
@@ -460,21 +472,35 @@ const MapEngine = {
   selectPlot(type, feature) {
     if (!feature) return;
     const p = feature.properties || {};
+    const targetUid = p.uid;
 
-    // 1. Highlight plot polygon
+    // 1. Highlight all plot polygons with the same UID
     this.highlightPlot(feature);
 
     // 2. Open side bar immediately from in-memory properties
     if (typeof Dossier !== 'undefined') {
+      const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+      const matchingFeatures = targetUid
+        ? allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid))
+        : [feature];
+
+      // Sum area across all matching polygons if multi-part parcel
+      let initialArea = p.area_acre;
+      if (matchingFeatures.length > 1) {
+        initialArea = matchingFeatures.reduce((acc, f) => acc + ((f.properties && f.properties.area_acre) || 0), 0);
+      }
+
       const bounds = this.getFeatureBounds(feature);
       const plotId = p.id;
+      
       Dossier.renderCSPlot({
         plot: {
           id: p.id,
+          uid: p.uid,
           plot_no: p.plot_no,
           mouza: p.mouza || 'N/A',
           jl_no: p.jl_no || 'N/A',
-          area_acre: p.area_acre,
+          area_acre: initialArea,
           beat_name: p.beat_name,
           type: 'CS Cadastral Survey'
         },
@@ -506,13 +532,27 @@ const MapEngine = {
     }
 
     if (feature) {
-      const center = fallbackLatLng || this.getFeatureCenter(feature);
-      const bounds = this.getFeatureBounds(feature);
+      const targetUid = feature.properties && feature.properties.uid;
+      const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+      const matchingFeatures = targetUid
+        ? allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid))
+        : [feature];
 
-      if (bounds && bounds.length === 4) {
-        this.map.fitBounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]], { maxZoom: 18, padding: [60, 60] });
-      } else if (center) {
-        this.map.setView(center, 18, { animate: true });
+      if (matchingFeatures.length > 1) {
+        const group = L.geoJSON(matchingFeatures);
+        const b = group.getBounds();
+        if (b.isValid()) {
+          this.map.fitBounds(b, { maxZoom: 18, padding: [60, 60] });
+        }
+      } else {
+        const center = fallbackLatLng || this.getFeatureCenter(feature);
+        const bounds = this.getFeatureBounds(feature);
+
+        if (bounds && bounds.length === 4) {
+          this.map.fitBounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]], { maxZoom: 18, padding: [60, 60] });
+        } else if (center) {
+          this.map.setView(center, 18, { animate: true });
+        }
       }
 
       this.selectPlot(type, feature);
