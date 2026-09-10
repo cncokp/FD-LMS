@@ -136,6 +136,7 @@ def _assemble_features_json(rows: List[Dict[str, Any]]) -> bytes:
         pno = json.dumps(r["plot_no"] or "")
         mouza = json.dumps(r["mouza"] or "")
         jl = json.dumps(r["jl_no"] or "")
+        beat = json.dumps(r.get("beat_name") or "")
         area = str(r["area_acre"] or 0)
         llat = str(r["label_lat"] or 0)
         llng = str(r["label_lng"] or 0)
@@ -145,7 +146,7 @@ def _assemble_features_json(rows: List[Dict[str, Any]]) -> bytes:
 
         feat_strs.append(
             f'{{"type":"Feature","id":{pid},'
-            f'"properties":{{"id":{pid},"plot_no":{pno},"mouza":{mouza},"jl_no":{jl},'
+            f'"properties":{{"id":{pid},"plot_no":{pno},"mouza":{mouza},"jl_no":{jl},"beat_name":{beat},'
             f'"area_acre":{area},"label_lat":{llat},"label_lng":{llng},"label_radius":{lrad}}},'
             f'"geometry":{geom_str}}}'
         )
@@ -327,6 +328,82 @@ def get_rs_plots_json_bytes(
 ) -> bytes:
     return b'{"type":"FeatureCollection","count":0,"bounds":null,"features":[]}'
 
+def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    bounds = [plot["minx"], plot["miny"], plot["maxx"], plot["maxy"]]
+    beat_name = plot.get("beat_name")
+
+    if not parcel_records:
+        return {
+            "plot": {
+                "id": plot["id"],
+                "plot_no": plot["plot_no"],
+                "mouza": plot["mouza"] or "N/A",
+                "jl_no": plot["jl_no"] or "N/A",
+                "area_acre": plot["area_acre"],
+                "beat_name": beat_name or None,
+                "type": "CS Cadastral Survey"
+            },
+            "bounds": bounds,
+            "parcel_info": {
+                "has_record": False,
+                "linked_rs_plots": []
+            }
+        }
+
+    first_rec = parcel_records[0]
+    effective_beat = beat_name or first_rec.get("beat_name")
+    range_val = first_rec.get("range")
+
+    # Collect unique legal statuses, khatians, remarks
+    legal_statuses = list(dict.fromkeys(r.get("legal_status") for r in parcel_records if r.get("legal_status")))
+    khatians = list(dict.fromkeys(r.get("khatian_no") for r in parcel_records if r.get("khatian_no")))
+    remarks_list = list(dict.fromkeys(r.get("remarks") for r in parcel_records if r.get("remarks")))
+
+    # Aggregate areas
+    fd_areas = [r["area_fd"] for r in parcel_records if r.get("area_fd") is not None]
+    others_areas = [r["area_others"] for r in parcel_records if r.get("area_others") is not None]
+    total_area_fd = round(sum(fd_areas), 4) if fd_areas else None
+    total_area_others = round(sum(others_areas), 4) if others_areas else None
+
+    # Linked RS survey plots list
+    linked_rs = []
+    for r in parcel_records:
+        if r.get("rs_plot_no"):
+            linked_rs.append({
+                "rs_plot_no": r.get("rs_plot_no"),
+                "rs_jl": r.get("rs_jl"),
+                "legal_status": r.get("legal_status"),
+                "khatian_no": r.get("khatian_no"),
+                "area_fd": r.get("area_fd"),
+                "area_others": r.get("area_others"),
+                "total_area": r.get("total_area"),
+                "remarks": r.get("remarks")
+            })
+
+    return {
+        "plot": {
+            "id": plot["id"],
+            "plot_no": plot["plot_no"],
+            "mouza": plot["mouza"] or "N/A",
+            "jl_no": plot["jl_no"] or "N/A",
+            "area_acre": plot["area_acre"],
+            "beat_name": effective_beat,
+            "type": "CS Cadastral Survey"
+        },
+        "bounds": bounds,
+        "parcel_info": {
+            "has_record": True,
+            "beat_name": effective_beat,
+            "range": range_val,
+            "legal_status": ", ".join(legal_statuses) if legal_statuses else None,
+            "khatian_no": ", ".join(khatians) if khatians else None,
+            "total_area_fd": total_area_fd,
+            "total_area_others": total_area_others,
+            "remarks": "; ".join(remarks_list) if remarks_list else None,
+            "linked_rs_plots": linked_rs
+        }
+    }
+
 def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
     if is_supabase_pg_enabled():
         try:
@@ -338,19 +415,18 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
                     """, (plot_id,))
                     plot = cur.fetchone()
                     if plot:
-                        return {
-                            "plot": {
-                                "id": plot["id"],
-                                "uid": plot["uid"],
-                                "plot_no": plot["plot_no"],
-                                "mouza": plot["mouza"] or "N/A",
-                                "jl_no": plot["jl_no"] or "N/A",
-                                "area_acre": plot["area_acre"],
-                                "beat_name": plot["beat_name"],
-                                "type": "CS Cadastral Survey"
-                            },
-                            "bounds": [plot["minx"], plot["miny"], plot["maxx"], plot["maxy"]]
-                        }
+                        parcel_records = []
+                        if plot.get("uid"):
+                            cur.execute("""
+                            SELECT cs_uid, rs_uid, range, beat_name, mouza, cs_jl, rs_jl,
+                                   cs_plot_no, rs_plot_no, cs_land_acre, total_area,
+                                   area_fd, area_others, khatian_no, legal_status, remarks
+                            FROM parcel_info
+                            WHERE cs_uid = %s
+                            ORDER BY id
+                            """, (plot["uid"],))
+                            parcel_records = [dict(r) for r in cur.fetchall()]
+                        return _build_parcel_dossier_payload(plot, parcel_records)
         except Exception as e:
             print(f"Supabase PG dossier error ({e}), trying Cloud API...")
 
@@ -360,19 +436,11 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
             rows = json.loads(resp.read().decode("utf-8"))
             if rows:
                 plot = rows[0]
-                return {
-                    "plot": {
-                        "id": plot["id"],
-                        "uid": plot["uid"],
-                        "plot_no": plot["plot_no"],
-                        "mouza": plot["mouza"] or "N/A",
-                        "jl_no": plot["jl_no"] or "N/A",
-                        "area_acre": plot["area_acre"],
-                        "beat_name": plot["beat_name"],
-                        "type": "CS Cadastral Survey"
-                    },
-                    "bounds": [plot["minx"], plot["miny"], plot["maxx"], plot["maxy"]]
-                }
+                parcel_records = []
+                if plot.get("uid"):
+                    p_resp = _supabase_request(f"parcel_info?cs_uid=eq.{urllib.parse.quote(str(plot['uid']))}&select=*&order=id")
+                    parcel_records = json.loads(p_resp.read().decode("utf-8"))
+                return _build_parcel_dossier_payload(plot, parcel_records)
         except Exception as e:
             print(f"Supabase Cloud API dossier error ({e}), falling back to SQLite...")
 
@@ -382,23 +450,22 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
         SELECT id, uid, plot_no, mouza, jl_no, area_acre, beat_name, minx, miny, maxx, maxy
         FROM cs_plots WHERE id = ?
         """, (plot_id,))
-        plot = cur.fetchone()
-        if not plot:
+        row = cur.fetchone()
+        if not row:
             return None
-
-        return {
-            "plot": {
-                "id": plot["id"],
-                "uid": plot["uid"],
-                "plot_no": plot["plot_no"],
-                "mouza": plot["mouza"] or "N/A",
-                "jl_no": plot["jl_no"] or "N/A",
-                "area_acre": plot["area_acre"],
-                "beat_name": plot["beat_name"],
-                "type": "CS Cadastral Survey"
-            },
-            "bounds": [plot["minx"], plot["miny"], plot["maxx"], plot["maxy"]]
-        }
+        plot = dict(row)
+        parcel_records = []
+        if plot.get("uid"):
+            cur.execute("""
+            SELECT cs_uid, rs_uid, range, beat_name, mouza, cs_jl, rs_jl,
+                   cs_plot_no, rs_plot_no, cs_land_acre, total_area,
+                   area_fd, area_others, khatian_no, legal_status, remarks
+            FROM parcel_info
+            WHERE cs_uid = ?
+            ORDER BY id
+            """, (plot["uid"],))
+            parcel_records = [dict(r) for r in cur.fetchall()]
+        return _build_parcel_dossier_payload(plot, parcel_records)
 
 def get_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
     return get_cs_plot_dossier(plot_id)

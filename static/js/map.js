@@ -467,6 +467,7 @@ const MapEngine = {
     // 2. Open side bar immediately from in-memory properties
     if (typeof Dossier !== 'undefined') {
       const bounds = this.getFeatureBounds(feature);
+      const plotId = p.id;
       Dossier.renderCSPlot({
         plot: {
           id: p.id,
@@ -477,8 +478,21 @@ const MapEngine = {
           beat_name: p.beat_name,
           type: 'CS Cadastral Survey'
         },
-        bounds: bounds
+        bounds: bounds,
+        loadingParcelInfo: true
       });
+
+      // 3. Asynchronously hydrate with full Forest Department status and reconciliation data
+      if (plotId) {
+        fetch(`/api/plots/cs/${plotId}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.plot && typeof Dossier !== 'undefined' && Dossier.currentPlotId === plotId) {
+              Dossier.renderCSPlot(data);
+            }
+          })
+          .catch(console.warn);
+      }
     }
   },
 
