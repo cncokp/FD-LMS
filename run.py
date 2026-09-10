@@ -32,4 +32,4 @@ if __name__ == "__main__":
     ensure_database()
     threading.Thread(target=open_browser, daemon=True).start()
     print("Starting FD-LMS WebGIS Server on http://127.0.0.1:8000 (and LAN/network at http://0.0.0.0:8000) ...")
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=True)

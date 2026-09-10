@@ -29,8 +29,12 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         if request.method == "GET" and response.status_code == 200:
             path = request.url.path
-            if path.startswith("/api/") or path.startswith("/static/"):
-                response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+            if path.startswith("/static/") or path == "/" or path == "/sw.js":
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            elif path.startswith("/api/"):
+                response.headers["Cache-Control"] = "no-cache"
         return response
 
 app.add_middleware(CacheControlMiddleware)

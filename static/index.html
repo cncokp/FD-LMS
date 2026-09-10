@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260910_02" />
 </head>
 <body>
   <div id="app-container">
@@ -158,10 +158,23 @@
     </main>
   </div>
 
+  <!-- Cache Purge & Fresh Assets -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        for (var r of regs) r.unregister();
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        for (var n of names) caches.delete(n);
+      });
+    }
+  </script>
   <!-- Leaflet & App Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/static/js/dossier.js"></script>
-  <script src="/static/js/map.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/dossier.js?v=20260910_02"></script>
+  <script src="/static/js/map.js?v=20260910_02"></script>
+  <script src="/static/js/app.js?v=20260910_02"></script>
 </body>
 </html>
