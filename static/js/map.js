@@ -190,6 +190,7 @@ const MapEngine = {
     allPlots: null,
     forestPlots: null,
     csPlots: null,
+    beatBoundaries: null,
     encroachments: null,
     highlight: null
   },
@@ -197,17 +198,20 @@ const MapEngine = {
     allPlots: null,
     forestPlots: null,
     cs: null,
+    beatBoundaries: null,
     encroachments: null
   },
   labelLayer: null,
   rawCSData: null,
   rawEncroachData: null,
+  rawBeatData: null,
   currentCSFeatures: [],
   forestFeatures: [],
   nonForestFeatures: [],
   isAllPlotsVisible: true,
   isForestPlotsVisible: true,
   isCSPlotsVisible: true,
+  isBeatBoundariesVisible: true,
   isEncroachmentsVisible: true,
   _plotClicked: false,
 
@@ -235,6 +239,10 @@ const MapEngine = {
     this.map.getPane('csPane').style.zIndex = 430;
     this.map.getPane('csPane').style.pointerEvents = 'auto';
 
+    this.map.createPane('beatPane');
+    this.map.getPane('beatPane').style.zIndex = 440;
+    this.map.getPane('beatPane').style.pointerEvents = 'auto';
+
     this.map.createPane('encroachPane');
     this.map.getPane('encroachPane').style.zIndex = 450;
     this.map.getPane('encroachPane').style.pointerEvents = 'none';
@@ -256,6 +264,7 @@ const MapEngine = {
     this.layers.allPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
     this.layers.forestPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
     this.layers.csPlots = this.layers.allPlots;
+    this.layers.beatBoundaries = L.featureGroup([], { pane: 'beatPane' }).addTo(this.map);
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
     this.layers.highlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
 
@@ -290,7 +299,8 @@ const MapEngine = {
 
     await Promise.all([
       this.loadCSPlots(),
-      this.loadEncroachments()
+      this.loadEncroachments(),
+      this.loadBeatBoundaries()
     ]);
   },
 
@@ -624,6 +634,80 @@ const MapEngine = {
   toggleCSPlots(visible) {
     this.toggleAllPlots(visible);
     this.toggleForestPlots(visible);
+  },
+
+  async loadBeatBoundaries() {
+    try {
+      const res = await fetch('/static/data/beat_boundaries.geojson');
+      const data = await res.json();
+      if (data && data.features && data.features.length > 0) {
+        this.rawBeatData = data;
+        this.renderBeatBoundariesGeoJSON(data);
+      }
+    } catch (e) {
+      console.warn("Failed to load beat boundaries:", e);
+    }
+  },
+
+  renderBeatBoundariesGeoJSON(geojsonData) {
+    if (!this.layers.beatBoundaries) return;
+    this.layers.beatBoundaries.clearLayers();
+    if (!geojsonData || !geojsonData.features) return;
+
+    const geoLayer = L.geoJSON(geojsonData, {
+      pane: 'beatPane',
+      style: () => ({
+        color: '#0284c7',
+        weight: 2.5,
+        opacity: 0.92,
+        fillColor: '#38bdf8',
+        fillOpacity: 0.04,
+        dashArray: '6, 5'
+      }),
+      onEachFeature: (feature, layer) => {
+        const p = feature.properties || {};
+        const beatName = p.beat_name || 'Forest Beat';
+        const areaStr = p.area_acre ? `${Number(p.area_acre).toLocaleString()} Acres` : '';
+
+        layer.bindTooltip(`<b>${beatName}</b>${areaStr ? '<br/><span style="font-weight:400; font-size:10px; color:#94a3b8;">' + areaStr + '</span>' : ''}`, {
+          sticky: true,
+          className: 'beat-boundary-tooltip',
+          direction: 'top'
+        });
+
+        layer.on('mouseover', () => {
+          layer.setStyle({
+            weight: 3.5,
+            color: '#38bdf8',
+            fillOpacity: 0.12
+          });
+        });
+
+        layer.on('mouseout', () => {
+          layer.setStyle({
+            weight: 2.5,
+            color: '#0284c7',
+            fillOpacity: 0.04
+          });
+        });
+      }
+    });
+
+    this.geoLayers.beatBoundaries = geoLayer;
+    geoLayer.addTo(this.layers.beatBoundaries);
+  },
+
+  toggleBeatBoundaries(visible) {
+    this.isBeatBoundariesVisible = visible;
+    if (visible) {
+      if (!this.map.hasLayer(this.layers.beatBoundaries)) {
+        this.map.addLayer(this.layers.beatBoundaries);
+      }
+    } else {
+      if (this.map.hasLayer(this.layers.beatBoundaries)) {
+        this.map.removeLayer(this.layers.beatBoundaries);
+      }
+    }
   },
 
   async loadEncroachments() {

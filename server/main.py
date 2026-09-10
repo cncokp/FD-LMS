@@ -70,6 +70,15 @@ def get_stats():
 def get_mouza_boundaries():
     return db.get_mouza_boundaries()
 
+@app.get("/api/beats/geojson")
+@app.get("/api/boundaries/beats")
+def get_beat_boundaries():
+    path = os.path.join(STATIC_DIR, "data", "beat_boundaries.geojson")
+    if os.path.exists(path):
+        return FileResponse(path, media_type="application/json")
+    raise HTTPException(status_code=404, detail="Beat boundaries not found")
+
+
 @app.get("/api/plots")
 @app.get("/api/plots/rs")
 def get_plots(

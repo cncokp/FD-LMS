@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_01" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_03" />
 </head>
 <body>
   <div id="app-container">
@@ -149,7 +149,21 @@
                     </div>
                   </div>
 
-                  <!-- 3. Encroached Parcels Alert Layer -->
+                  <!-- 3. Beat Boundaries Layer -->
+                  <div class="layer-item highlight-blue">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="toggleBeatBoundaries" checked />
+                      <span class="slider blue"></span>
+                    </label>
+                    <div class="layer-desc">
+                      <span class="layer-title" style="color: #7dd3fc;">Beat Boundaries</span>
+                      <span class="layer-legend-pill">
+                        <span class="dot blue" style="background-color: #38bdf8;"></span> 7 Beats &bull; 24,718 Acres
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 4. Encroached Parcels Alert Layer -->
                   <div class="layer-item highlight-red">
                     <label class="toggle-switch">
                       <input type="checkbox" id="toggleEncroachments" checked />
@@ -209,8 +223,8 @@
   </script>
   <!-- Leaflet & App Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/static/js/dossier.js?v=20260911_02"></script>
-  <script src="/static/js/map.js?v=20260911_02"></script>
-  <script src="/static/js/app.js?v=20260911_02"></script>
+  <script src="/static/js/dossier.js?v=20260911_03"></script>
+  <script src="/static/js/map.js?v=20260911_03"></script>
+  <script src="/static/js/app.js?v=20260911_03"></script>
 </body>
 </html>

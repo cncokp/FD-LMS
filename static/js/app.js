@@ -142,6 +142,13 @@ function setupLayerToggles() {
     });
   }
 
+  const toggleBeatBoundaries = document.getElementById('toggleBeatBoundaries');
+  if (toggleBeatBoundaries) {
+    toggleBeatBoundaries.addEventListener('change', (e) => {
+      MapEngine.toggleBeatBoundaries(e.target.checked);
+    });
+  }
+
   const toggleCSPlots = document.getElementById('toggleCSPlots');
   if (toggleCSPlots) {
     toggleCSPlots.addEventListener('change', (e) => {
