@@ -682,77 +682,69 @@ input:checked + .slider:before {
   justify-content: center;
 }
 
-/* ================= Right Drawer: Parcel Dossier ================= */
+/* ================= Right Drawer: Parcel Dossier (Minimalist & Lightweight) ================= */
 .dossier-drawer {
   position: absolute;
   top: 12px;
   right: 12px;
   bottom: 12px;
-  width: 380px;
-  background: rgba(11, 15, 25, 0.92);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  width: 350px;
+  background: rgba(11, 15, 25, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 12px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
   z-index: 600;
   display: flex;
   flex-direction: column;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dossier-drawer.hidden {
-  transform: translateX(420px);
+  transform: translateX(390px);
   pointer-events: none;
 }
 
 .drawer-header {
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.drawer-badge {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--primary);
-  text-transform: uppercase;
-}
-
 #dossierTitle {
-  font-size: 15px;
-  font-weight: 700;
-  color: #fff;
-  margin-top: 1px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
 }
 
 .drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 16px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
-/* Dossier Cards & Sections */
+/* Minimalist Dossier Cards */
 .dossier-card {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.015);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   padding: 12px;
 }
 
 .dossier-card-title {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 10.5px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin-bottom: 12px;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -761,12 +753,13 @@ input:checked + .slider:before {
 .dossier-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px 12px;
 }
 
 .dossier-prop {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .dossier-prop.full-width {
@@ -774,16 +767,15 @@ input:checked + .slider:before {
 }
 
 .prop-label {
-  font-size: 11px;
-  color: var(--text-dim);
+  font-size: 10.5px;
+  color: #64748b;
   font-weight: 500;
 }
 
 .prop-val {
   font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  margin-top: 2px;
+  font-weight: 500;
+  color: #e2e8f0;
   font-family: var(--font-sans);
 }
 
@@ -791,82 +783,45 @@ input:checked + .slider:before {
   font-family: var(--font-mono);
 }
 
-.badge-stat {
+/* Minimalist Muted Tag */
+.tag-muted {
   display: inline-block;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.badge-stat.sec20 {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.badge-stat.sec6 {
-  background: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-.badge-stat.general {
-  background: rgba(148, 163, 184, 0.15);
-  color: #cbd5e1;
-}
-
-/* Encroachment Alert Banner in Dossier */
-.alert-banner {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(185, 28, 28, 0.2) 100%);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  border-radius: 12px;
-  padding: 14px 16px;
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.alert-banner i {
-  font-size: 20px;
-  color: #f87171;
-  margin-top: 2px;
-}
-
-.alert-content h4 {
-  font-size: 13px;
-  font-weight: 700;
-  color: #fca5a5;
-}
-
-.alert-content p {
-  font-size: 12px;
-  color: #fecaca;
-  margin-top: 4px;
-  line-height: 1.4;
-}
-
-/* CS-RS Reconciliation Table */
+/* Minimalist Clean Table */
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .data-table th {
   text-align: left;
-  padding: 8px;
-  color: var(--text-dim);
-  font-size: 10px;
+  padding: 6px 8px;
+  color: #64748b;
+  font-size: 9.5px;
+  font-weight: 600;
   text-transform: uppercase;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .data-table td {
-  padding: 8px;
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 6px 8px;
+  color: #cbd5e1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
 }
 
 /* ================= Modals ================= */
