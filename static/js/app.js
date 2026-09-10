@@ -250,23 +250,76 @@ function setupSearchAutocomplete() {
 
     searchTimeout = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-        const results = await res.json();
+        const qLower = q.toLowerCase();
 
-        if (results.length === 0) {
-          dropdown.innerHTML = `<div class="search-item" style="color: var(--text-dim); font-size: 11.5px; padding: 8px 12px;">No matching plot or mouza found</div>`;
+        // 1. In-memory Beat Boundary search
+        const beatMatches = [];
+        if (MapEngine.rawBeatData && MapEngine.rawBeatData.features) {
+          for (const feat of MapEngine.rawBeatData.features) {
+            const p = feat.properties || {};
+            const bName = (p.beat_name || '').toLowerCase();
+            const rName = (p.raw_name || '').toLowerCase();
+            if (bName.includes(qLower) || rName.includes(qLower) || (qLower.includes('beat') && (bName || rName))) {
+              beatMatches.push({
+                type: 'beat',
+                id: p.id,
+                label: p.beat_name,
+                sublabel: `${p.area_acre ? Number(p.area_acre).toLocaleString() + ' Acres' : 'Forest Beat'} • Administrative Boundary`,
+                lat: p.center_lat,
+                lng: p.center_lng,
+                bounds: p.bounds
+              });
+            }
+          }
+        }
+
+        // 2. Server Plot & Mouza search
+        let serverResults = [];
+        try {
+          const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+          if (res.ok) {
+            serverResults = await res.json();
+          }
+        } catch (fetchErr) {
+          console.warn("Search fetch error:", fetchErr);
+        }
+
+        const combined = [...beatMatches, ...serverResults];
+
+        if (combined.length === 0) {
+          dropdown.innerHTML = `<div class="search-item" style="color: var(--text-dim); font-size: 11.5px; padding: 10px 12px; pointer-events: none;"><i class="fa-solid fa-circle-exclamation" style="margin-right: 6px;"></i>No matching plot, mouza, or beat found</div>`;
           dropdown.classList.remove('hidden');
-          dropdown.style.display = 'block';
+          dropdown.style.display = 'flex';
           return;
         }
 
-        dropdown.innerHTML = results.map(item => {
+        dropdown.innerHTML = combined.map((item, idx) => {
           const boundsAttr = JSON.stringify(item.bounds || []);
+          let badgeClass = 'badge-plot';
+          let badgeText = 'PLOT';
+          let iconClass = 'fa-solid fa-scroll';
+          let iconColor = '#34d399';
+
+          if (item.type === 'beat') {
+            badgeClass = 'badge-beat';
+            badgeText = 'BEAT';
+            iconClass = 'fa-solid fa-tree-city';
+            iconColor = '#38bdf8';
+          } else if (item.type === 'mouza') {
+            badgeClass = 'badge-mouza';
+            badgeText = 'MOUZA';
+            iconClass = 'fa-solid fa-map-location-dot';
+            iconColor = '#c084fc';
+          }
+
           return `
-            <div class="search-item" data-type="${item.type}" data-id="${item.id || ''}" data-lat="${item.lat}" data-lng="${item.lng}" data-bounds='${boundsAttr}'>
-              <div class="search-item-label">
-                <i class="fa-solid fa-scroll text-warning"></i>
-                <span>${item.label}</span>
+            <div class="search-item ${idx === 0 ? 'selected' : ''}" data-index="${idx}" data-type="${item.type}" data-id="${item.id || ''}" data-lat="${item.lat}" data-lng="${item.lng}" data-bounds='${boundsAttr}'>
+              <div class="search-item-header">
+                <div class="search-item-label">
+                  <i class="${iconClass}" style="color: ${iconColor};"></i>
+                  <span>${item.label}</span>
+                </div>
+                <span class="search-badge ${badgeClass}">${badgeText}</span>
               </div>
               <div class="search-item-sublabel">${item.sublabel}</div>
             </div>
@@ -274,7 +327,7 @@ function setupSearchAutocomplete() {
         }).join('');
 
         dropdown.classList.remove('hidden');
-        dropdown.style.display = 'block';
+        dropdown.style.display = 'flex';
 
         dropdown.querySelectorAll('.search-item').forEach(el => {
           el.addEventListener('click', (e) => {
@@ -293,18 +346,25 @@ function setupSearchAutocomplete() {
             if (btnClear) btnClear.classList.add('hidden');
             input.blur();
 
-            if (id && type === 'cs_plot') {
+            if (type === 'beat') {
+              MapEngine.flyToBeat({ id, lat, lng, bounds });
+            } else if (id && type === 'cs_plot') {
               MapEngine.selectPlotById('cs_plot', id, (lat && lng) ? [lat, lng] : null, bounds);
             } else if (lat && lng) {
               MapEngine.map.panTo([lat, lng], { animate: true });
             }
+          });
+
+          el.addEventListener('mouseenter', () => {
+            dropdown.querySelectorAll('.search-item').forEach(it => it.classList.remove('selected'));
+            el.classList.add('selected');
           });
         });
 
       } catch (err) {
         console.error("Search error:", err);
       }
-    }, 180);
+    }, 150);
   });
 
   input.addEventListener('keydown', (e) => {
@@ -316,10 +376,29 @@ function setupSearchAutocomplete() {
       input.blur();
       return;
     }
-    if (e.key === 'Enter') {
-      const firstItem = dropdown.querySelector('.search-item[data-id]');
-      if (firstItem) {
-        firstItem.click();
+
+    const items = Array.from(dropdown.querySelectorAll('.search-item'));
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      let curr = items.findIndex(el => el.classList.contains('selected'));
+      if (curr >= 0) items[curr].classList.remove('selected');
+      curr = (curr + 1) % items.length;
+      items[curr].classList.add('selected');
+      items[curr].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      let curr = items.findIndex(el => el.classList.contains('selected'));
+      if (curr >= 0) items[curr].classList.remove('selected');
+      curr = (curr - 1 + items.length) % items.length;
+      items[curr].classList.add('selected');
+      items[curr].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const selected = dropdown.querySelector('.search-item.selected') || items[0];
+      if (selected) {
+        selected.click();
       }
     }
   });

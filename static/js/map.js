@@ -191,6 +191,7 @@ const MapEngine = {
     forestPlots: null,
     csPlots: null,
     beatBoundaries: null,
+    beatLabels: null,
     encroachments: null,
     highlight: null
   },
@@ -265,11 +266,16 @@ const MapEngine = {
     this.layers.forestPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
     this.layers.csPlots = this.layers.allPlots;
     this.layers.beatBoundaries = L.featureGroup([], { pane: 'beatPane' }).addTo(this.map);
+    this.layers.beatLabels = L.featureGroup([], { pane: 'labelPane' }).addTo(this.map);
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
     this.layers.highlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
 
     this.labelLayer = new PlotLabelLayer();
     this.map.addLayer(this.labelLayer);
+
+    this.map.on('zoomend', () => {
+      this.updateBeatLabelsVisibility();
+    });
 
     // Map click: check if a plot was clicked
     this.map.on('click', (e) => {
@@ -652,49 +658,74 @@ const MapEngine = {
   renderBeatBoundariesGeoJSON(geojsonData) {
     if (!this.layers.beatBoundaries) return;
     this.layers.beatBoundaries.clearLayers();
+    if (this.layers.beatLabels) this.layers.beatLabels.clearLayers();
     if (!geojsonData || !geojsonData.features) return;
 
+    // 1. Static Beat Boundary Polygons (no tooltip, no hover styling changes)
     const geoLayer = L.geoJSON(geojsonData, {
       pane: 'beatPane',
+      interactive: false,
       style: () => ({
         color: '#0284c7',
-        weight: 2.5,
-        opacity: 0.92,
+        weight: 2.2,
+        opacity: 0.90,
         fillColor: '#38bdf8',
         fillOpacity: 0.04,
-        dashArray: '6, 5'
-      }),
-      onEachFeature: (feature, layer) => {
-        const p = feature.properties || {};
-        const beatName = p.beat_name || 'Forest Beat';
-        const areaStr = p.area_acre ? `${Number(p.area_acre).toLocaleString()} Acres` : '';
-
-        layer.bindTooltip(`<b>${beatName}</b>${areaStr ? '<br/><span style="font-weight:400; font-size:10px; color:#94a3b8;">' + areaStr + '</span>' : ''}`, {
-          sticky: true,
-          className: 'beat-boundary-tooltip',
-          direction: 'top'
-        });
-
-        layer.on('mouseover', () => {
-          layer.setStyle({
-            weight: 3.5,
-            color: '#38bdf8',
-            fillOpacity: 0.12
-          });
-        });
-
-        layer.on('mouseout', () => {
-          layer.setStyle({
-            weight: 2.5,
-            color: '#0284c7',
-            fillOpacity: 0.04
-          });
-        });
-      }
+        dashArray: '6, 5',
+        interactive: false
+      })
     });
 
     this.geoLayers.beatBoundaries = geoLayer;
     geoLayer.addTo(this.layers.beatBoundaries);
+
+    // 2. Static Beat Name Labels (visible when zoom < 15, toggled with plot labels)
+    for (let i = 0; i < geojsonData.features.length; i++) {
+      const feat = geojsonData.features[i];
+      const p = feat.properties || {};
+      const lat = p.center_lat;
+      const lng = p.center_lng;
+      let rawName = (p.raw_name || p.beat_name || 'Beat').trim();
+      let displayName = rawName;
+      if (!displayName.toLowerCase().endsWith('beat')) {
+        displayName += ' Beat';
+      }
+
+      if (lat && lng && this.layers.beatLabels) {
+        const beatIcon = L.divIcon({
+          className: 'beat-map-marker-container',
+          html: `<div class="beat-map-label"><i class="fa-solid fa-tree-city"></i><span>${displayName}</span></div>`,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0]
+        });
+
+        L.marker([lat, lng], {
+          icon: beatIcon,
+          pane: 'labelPane',
+          interactive: false
+        }).addTo(this.layers.beatLabels);
+      }
+    }
+
+    this.updateBeatLabelsVisibility();
+  },
+
+  updateBeatLabelsVisibility() {
+    if (!this.layers.beatLabels) return;
+    const zoom = this.map ? this.map.getZoom() : 13;
+    // Beat label and plot label automatically toggled:
+    // Plot labels appear at zoom >= 15.
+    // Beat labels are visible when zoom < 15 and isBeatBoundariesVisible is true.
+    const shouldShow = Boolean(this.isBeatBoundariesVisible && zoom < 15);
+    if (shouldShow) {
+      if (!this.map.hasLayer(this.layers.beatLabels)) {
+        this.map.addLayer(this.layers.beatLabels);
+      }
+    } else {
+      if (this.map.hasLayer(this.layers.beatLabels)) {
+        this.map.removeLayer(this.layers.beatLabels);
+      }
+    }
   },
 
   toggleBeatBoundaries(visible) {
@@ -707,6 +738,23 @@ const MapEngine = {
       if (this.map.hasLayer(this.layers.beatBoundaries)) {
         this.map.removeLayer(this.layers.beatBoundaries);
       }
+    }
+    this.updateBeatLabelsVisibility();
+  },
+
+  flyToBeat(beat) {
+    if (!beat) return;
+    const toggle = document.getElementById('toggleBeatBoundaries');
+    if (toggle && !toggle.checked) {
+      toggle.checked = true;
+      this.toggleBeatBoundaries(true);
+    }
+
+    if (beat.bounds && beat.bounds.length === 4) {
+      const [minx, miny, maxx, maxy] = beat.bounds;
+      this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [50, 50], maxZoom: 14 });
+    } else if (beat.lat && beat.lng) {
+      this.map.setView([beat.lat, beat.lng], 13, { animate: true });
     }
   },
 
