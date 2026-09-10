@@ -70,6 +70,8 @@ const Dossier = {
     let rsDetailsHtml = '';
     if (pi && pi.linked_rs_plots && pi.linked_rs_plots.length > 0) {
       const rsRows = pi.linked_rs_plots.map(r => {
+        const legal = r.legal_status || '';
+        const badgeClass = legal.includes('20') ? 'sec20' : (legal.includes('6') ? 'sec6' : 'general');
         const fdStr = r.area_fd != null ? Number(r.area_fd).toFixed(2) : '-';
         const othersStr = r.area_others != null ? Number(r.area_others).toFixed(2) : '-';
         return `
@@ -78,7 +80,7 @@ const Dossier = {
             <td class="mono" style="color: #94a3b8; font-size: 11px;">${r.khatian_no || '-'}</td>
             <td class="mono" style="text-align: right; color: #e2e8f0;">${fdStr}</td>
             <td class="mono" style="text-align: right; color: #94a3b8;">${othersStr}</td>
-            <td style="text-align: right;"><span class="tag-muted">${r.legal_status || 'N/A'}</span></td>
+            <td style="text-align: right;"><span class="badge-stat ${badgeClass}">${legal || 'N/A'}</span></td>
           </tr>
         `;
       }).join('');
@@ -90,7 +92,7 @@ const Dossier = {
             <span>RS Plots Details</span>
             <span style="font-size: 10.5px; color: #64748b; font-weight: 400; text-transform: none;">${pi.linked_rs_plots.length} linked</span>
           </div>
-          <div style="overflow-x: auto; max-height: 230px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.04);">
+          <div class="rs-table-container">
             <table class="data-table">
               <thead>
                 <tr>
@@ -159,17 +161,17 @@ const Dossier = {
             </span>
           </div>
 
-          <div class="dossier-prop" style="grid-column: 1 / -1;">
-            <span class="prop-label">Forest Range</span>
-            <span class="prop-val">
-              ${rangeDisplay}
-            </span>
-          </div>
-
-          <div class="dossier-prop" style="grid-column: 1 / -1;">
+          <div class="dossier-prop">
             <span class="prop-label">Beat Name</span>
             <span class="prop-val">
               ${beatDisplay}
+            </span>
+          </div>
+
+          <div class="dossier-prop">
+            <span class="prop-label">Forest Range</span>
+            <span class="prop-val">
+              ${rangeDisplay}
             </span>
           </div>
         </div>

@@ -783,7 +783,7 @@ input:checked + .slider:before {
   font-family: var(--font-mono);
 }
 
-/* Minimalist Muted Tag */
+/* Minimalist Muted Tag & Badges for Legal Status */
 .tag-muted {
   display: inline-block;
   padding: 2px 6px;
@@ -793,31 +793,83 @@ input:checked + .slider:before {
   background: rgba(255, 255, 255, 0.04);
   color: #94a3b8;
   border: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
 }
 
-/* Minimalist Clean Table */
+.badge-stat {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.badge-stat.sec20 {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.32);
+}
+
+.badge-stat.sec6 {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+}
+
+.badge-stat.general {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* Scrollable Container with Fixed Sticky Header */
+.rs-table-container {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 230px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
+/* Minimalist Clean Single-Line Table with Sticky Header */
 .data-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 11.5px;
+  white-space: nowrap;
 }
 
 .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   text-align: left;
-  padding: 6px 8px;
-  color: #64748b;
+  padding: 7px 8px;
+  color: #94a3b8;
   font-size: 9.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  background: #111726; /* solid dark background keeps header visible over scrolling rows */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
 }
 
 .data-table td {
   padding: 6px 8px;
   color: #cbd5e1;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.data-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .data-table tr:last-child td {
