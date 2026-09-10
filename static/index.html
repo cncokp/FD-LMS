@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FD-LMS | Bangladesh Forest Department Cadastral Portal</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <!-- Google Fonts & Font Awesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  
+  <!-- App Styles -->
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <div id="app-container">
+    
+    <!-- Minimalist Top Navigation Bar -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <div class="brand-logo">
+          <i class="fa-solid fa-tree"></i>
+        </div>
+        <div class="brand-text">
+          <h1>FD-LMS</h1>
+          <span class="subtext">Cadastral Boundary Portal</span>
+        </div>
+      </div>
+
+      <!-- Search & Controls -->
+      <div class="nav-controls">
+        <div class="search-box-wrapper">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input type="text" id="searchInput" placeholder="Search by Plot # or Mouza..." autocomplete="off" />
+          <div id="searchResults" class="search-dropdown hidden"></div>
+        </div>
+
+        <button class="btn btn-outline btn-sm" id="btnExport" title="Export Plot Boundaries to CSV">
+          <i class="fa-solid fa-arrow-down-to-line"></i>
+          <span>Export CSV</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace: Map & Panels -->
+    <main class="main-content">
+      
+      <!-- Interactive Leaflet Map -->
+      <div id="map"></div>
+
+      <!-- Bottom Map Info Badge -->
+      <div class="map-info-badge" id="mapInfoBadge">
+        <i class="fa-solid fa-circle-check text-success"></i>
+        <span id="mapZoomStatus">Plot Boundary (CS) loaded &bull; Zero reload</span>
+      </div>
+
+      <!-- Left Floating Layer & Basemap Control -->
+      <div class="map-widget-container" id="mapWidgetContainer">
+        
+        <!-- Tab Bar -->
+        <div class="horizontal-tab-bar" id="horizontalTabBar" role="tablist">
+          <button class="tab-btn active" id="tabBtnLayers" role="tab" title="Map Layers & Basemap">
+            <i class="fa-solid fa-layer-group"></i>
+            <span>Layers & Basemap</span>
+          </button>
+        </div>
+
+        <!-- Expandable Panel -->
+        <div class="dropdown-panel" id="dropdownPanel">
+          <div class="panel-header-mini">
+            <h3 id="panelHeaderTitle"><i class="fa-solid fa-layer-group"></i> Basemap & Cadastral Layers</h3>
+            <button class="btn-icon" id="btnCloseDropdownPanel" title="Collapse Panel">
+              <i class="fa-solid fa-chevron-up"></i>
+            </button>
+          </div>
+
+          <div class="panel-scroll-body">
+            <div class="flyout-view" id="viewLayers">
+              <!-- Basemap Selection -->
+              <div class="control-group">
+                <label class="control-label"><i class="fa-solid fa-earth-americas"></i> Basemap</label>
+                <div class="basemap-options">
+                  <button class="btn-basemap active" data-basemap="satellite">
+                    <i class="fa-solid fa-satellite"></i> Satellite
+                  </button>
+                  <button class="btn-basemap" data-basemap="hybrid">
+                    <i class="fa-solid fa-map"></i> Hybrid
+                  </button>
+                  <button class="btn-basemap" data-basemap="osm">
+                    <i class="fa-solid fa-road"></i> Streets
+                  </button>
+                  <button class="btn-basemap" data-basemap="dark">
+                    <i class="fa-solid fa-moon"></i> Dark
+                  </button>
+                </div>
+              </div>
+
+              <!-- Cadastral Layer Toggles -->
+              <div class="control-group" style="margin-top: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <label class="control-label"><i class="fa-solid fa-toggle-on"></i> Cadastral Boundaries</label>
+                  <span id="layerCountBadge" style="font-size: 10px; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 700;">1 Active</span>
+                </div>
+                
+                <div id="layerListContainer" style="display: flex; flex-direction: column; gap: 8px;">
+                  
+                  <!-- 1. Plot Boundary (CS) Layer -->
+                  <div class="layer-item">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="toggleCSPlots" checked />
+                      <span class="slider green"></span>
+                    </label>
+                    <div class="layer-desc">
+                      <span class="layer-title">Plot Boundary (CS)</span>
+                      <span class="layer-legend-pill">
+                        <span class="dot green" style="background-color: #059669;"></span> 11,312 Parcels
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Info Box on UID Linking -->
+              <div style="margin-top: 14px; padding: 10px 12px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 8px; font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: #38bdf8; font-weight: 600;">
+                  <i class="fa-solid fa-circle-info"></i> Data Linking Enabled
+                </div>
+                Parcels indexed strictly by <strong>Plot No</strong> and <strong>UID</strong>. Zoom $\ge$ 1:4000 to view labels inside parcels.
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Drawer: Parcel Dossier / Side Bar Inspector -->
+      <aside class="dossier-drawer hidden" id="dossierDrawer">
+        <div class="drawer-header">
+          <div class="drawer-title-group">
+            <span class="drawer-badge" id="dossierBadge">PARCEL DOSSIER</span>
+            <h2 id="dossierTitle">Plot #---</h2>
+          </div>
+          <button class="btn-icon" id="btnCloseDossier" title="Close Dossier">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="drawer-body" id="dossierContent">
+          <!-- Populated dynamically when a plot is selected -->
+        </div>
+      </aside>
+
+    </main>
+  </div>
+
+  <!-- Leaflet & App Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/static/js/dossier.js"></script>
+  <script src="/static/js/map.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
