@@ -711,9 +711,22 @@ const MapEngine = {
       }
 
       if (lat && lng && this.layers.beatLabels) {
+        // Estimate the beat polygon width in screen-pixels from its stored bounds.
+        // Use ~60% of that as max-width so the text comfortably wraps inside the boundary.
+        let maxWidthPx = 80; // safe fallback
+        if (p.bounds && p.bounds.length === 4) {
+          const [bMinX, bMinY, bMaxX, bMaxY] = p.bounds;
+          const swPt = this.map.latLngToContainerPoint([bMinY, bMinX]);
+          const nePt = this.map.latLngToContainerPoint([bMaxY, bMaxX]);
+          const polyWidthPx  = Math.abs(nePt.x - swPt.x);
+          const polyHeightPx = Math.abs(swPt.y - nePt.y);
+          const polyMinDim   = Math.min(polyWidthPx, polyHeightPx);
+          maxWidthPx = Math.max(60, Math.min(140, Math.round(polyMinDim * 0.65)));
+        }
+
         const beatIcon = L.divIcon({
           className: 'beat-map-marker-container',
-          html: `<div class="beat-map-label"><i class="fa-solid fa-tree-city"></i><span>${displayName}</span></div>`,
+          html: `<div class="beat-map-label" style="max-width:${maxWidthPx}px">${displayName}</div>`,
           iconSize: [0, 0],
           iconAnchor: [0, 0]
         });
