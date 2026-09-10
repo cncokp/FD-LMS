@@ -26,28 +26,35 @@ function setupHorizontalWidget() {
   const btnCloseDropdownPanel = document.getElementById('btnCloseDropdownPanel');
   const btnCloseDossier = document.getElementById('btnCloseDossier');
 
-  let isExpanded = true;
+  window.openLayersPanel = function() {
+    if (dropdownPanel) dropdownPanel.classList.remove('collapsed');
+    if (tabBtnLayers) tabBtnLayers.classList.add('active');
+    // Collapse search when opening layers
+    if (window.closeSearchWidget) window.closeSearchWidget();
+  };
 
-  function togglePanel() {
-    isExpanded = !isExpanded;
-    if (isExpanded) {
-      dropdownPanel.classList.remove('collapsed');
-      if (tabBtnLayers) tabBtnLayers.classList.add('active');
-    } else {
-      dropdownPanel.classList.add('collapsed');
-      if (tabBtnLayers) tabBtnLayers.classList.remove('active');
-    }
-  }
+  window.closeLayersPanel = function() {
+    if (dropdownPanel) dropdownPanel.classList.add('collapsed');
+    if (tabBtnLayers) tabBtnLayers.classList.remove('active');
+  };
+
+  window.isLayersPanelOpen = function() {
+    return dropdownPanel && !dropdownPanel.classList.contains('collapsed');
+  };
 
   if (tabBtnLayers) {
-    tabBtnLayers.addEventListener('click', togglePanel);
+    tabBtnLayers.addEventListener('click', () => {
+      if (window.isLayersPanelOpen()) {
+        window.closeLayersPanel();
+      } else {
+        window.openLayersPanel();
+      }
+    });
   }
 
   if (btnCloseDropdownPanel) {
     btnCloseDropdownPanel.addEventListener('click', () => {
-      isExpanded = false;
-      dropdownPanel.classList.add('collapsed');
-      if (tabBtnLayers) tabBtnLayers.classList.remove('active');
+      window.closeLayersPanel();
     });
   }
 
@@ -60,17 +67,81 @@ function setupHorizontalWidget() {
 }
 
 function setupBasemapSwitcher() {
-  document.querySelectorAll('.btn-basemap').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.btn-basemap').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const basemap = btn.dataset.basemap;
+  const toggleBtn = document.getElementById('btnBasemapToggle');
+  const popup = document.getElementById('basemapPickerPopup');
+  const items = document.querySelectorAll('.basemap-picker-item');
+  const btnZoomIn = document.getElementById('btnZoomIn');
+  const btnZoomOut = document.getElementById('btnZoomOut');
+
+  if (toggleBtn && popup) {
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = popup.classList.contains('hidden');
+      if (isHidden) {
+        popup.classList.remove('hidden');
+        popup.style.display = 'flex';
+        toggleBtn.classList.add('active');
+      } else {
+        popup.classList.add('hidden');
+        popup.style.display = 'none';
+        toggleBtn.classList.remove('active');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!popup.contains(e.target) && e.target !== toggleBtn && !toggleBtn.contains(e.target)) {
+        popup.classList.add('hidden');
+        popup.style.display = 'none';
+        toggleBtn.classList.remove('active');
+      }
+    });
+  }
+
+  items.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      items.forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      const basemap = item.dataset.basemap;
       MapEngine.setBasemap(basemap);
+      if (popup) {
+        popup.classList.add('hidden');
+        popup.style.display = 'none';
+      }
+      if (toggleBtn) {
+        toggleBtn.classList.remove('active');
+      }
     });
   });
+
+  if (btnZoomIn) {
+    btnZoomIn.addEventListener('click', () => {
+      if (MapEngine.map) MapEngine.map.zoomIn();
+    });
+  }
+
+  if (btnZoomOut) {
+    btnZoomOut.addEventListener('click', () => {
+      if (MapEngine.map) MapEngine.map.zoomOut();
+    });
+  }
 }
 
 function setupLayerToggles() {
+  const toggleAllPlots = document.getElementById('toggleAllPlots');
+  if (toggleAllPlots) {
+    toggleAllPlots.addEventListener('change', (e) => {
+      MapEngine.toggleAllPlots(e.target.checked);
+    });
+  }
+
+  const toggleForestPlots = document.getElementById('toggleForestPlots');
+  if (toggleForestPlots) {
+    toggleForestPlots.addEventListener('change', (e) => {
+      MapEngine.toggleForestPlots(e.target.checked);
+    });
+  }
+
   const toggleCSPlots = document.getElementById('toggleCSPlots');
   if (toggleCSPlots) {
     toggleCSPlots.addEventListener('change', (e) => {
@@ -94,8 +165,11 @@ function setupLayerToggles() {
 }
 
 function setupSearchAutocomplete() {
+  const container = document.getElementById('expandableSearchContainer');
+  const toggleBtn = document.getElementById('btnToggleSearch');
   const input = document.getElementById('searchInput');
   const dropdown = document.getElementById('searchResults');
+  const btnClear = document.getElementById('btnClearSearch');
   if (!input || !dropdown) return;
 
   let searchTimeout = null;
@@ -106,9 +180,61 @@ function setupSearchAutocomplete() {
     dropdown.innerHTML = '';
   }
 
+  function expandSearch() {
+    if (container) container.classList.add('expanded');
+    if (toggleBtn) toggleBtn.classList.add('active');
+    // Collapse Layers panel when search expands
+    if (window.closeLayersPanel) window.closeLayersPanel();
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function closeSearch() {
+    if (container) container.classList.remove('expanded');
+    if (toggleBtn) toggleBtn.classList.remove('active');
+    collapseSearch();
+  }
+
+  window.closeSearchWidget = function() {
+    closeSearch();
+  };
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isExpanded = container && container.classList.contains('expanded');
+      if (isExpanded) {
+        closeSearch();
+        // If closing search and layers panel is closed, restore layers panel
+        if (window.openLayersPanel && !window.isLayersPanelOpen()) {
+          window.openLayersPanel();
+        }
+      } else {
+        expandSearch();
+      }
+    });
+  }
+
+  if (btnClear) {
+    btnClear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      input.value = '';
+      btnClear.classList.add('hidden');
+      collapseSearch();
+      input.focus();
+    });
+  }
+
   input.addEventListener('input', () => {
     clearTimeout(searchTimeout);
     const q = input.value.trim();
+
+    if (btnClear) {
+      if (q.length > 0) {
+        btnClear.classList.remove('hidden');
+      } else {
+        btnClear.classList.add('hidden');
+      }
+    }
 
     if (q.length === 0) {
       collapseSearch();
@@ -121,7 +247,7 @@ function setupSearchAutocomplete() {
         const results = await res.json();
 
         if (results.length === 0) {
-          dropdown.innerHTML = `<div class="search-item" style="color: var(--text-dim);">No matching plot or mouza found</div>`;
+          dropdown.innerHTML = `<div class="search-item" style="color: var(--text-dim); font-size: 11.5px; padding: 8px 12px;">No matching plot or mouza found</div>`;
           dropdown.classList.remove('hidden');
           dropdown.style.display = 'block';
           return;
@@ -157,6 +283,7 @@ function setupSearchAutocomplete() {
 
             collapseSearch();
             input.value = '';
+            if (btnClear) btnClear.classList.add('hidden');
             input.blur();
 
             if (id && type === 'cs_plot') {
@@ -176,6 +303,9 @@ function setupSearchAutocomplete() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       collapseSearch();
+      if (!input.value) {
+        closeSearch();
+      }
       input.blur();
       return;
     }
@@ -188,8 +318,11 @@ function setupSearchAutocomplete() {
   });
 
   document.addEventListener('click', (e) => {
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+    if (container && !container.contains(e.target)) {
       collapseSearch();
+      if (!input.value.trim()) {
+        closeSearch();
+      }
     }
   });
 }

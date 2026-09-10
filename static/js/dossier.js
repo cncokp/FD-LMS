@@ -194,7 +194,6 @@ const Dossier = {
         <div class="dossier-card-title">
           <span>Parcel Identification</span>
         </div>
-        ${encroachBanner}
         <div class="dossier-grid">
           <div class="dossier-prop">
             <span class="prop-label">Plot Number</span>
@@ -254,8 +253,8 @@ const Dossier = {
         </div>
       </div>
 
-      ${encroachHtml}
       ${rsDetailsHtml}
+      ${encroachHtml}
 
       <!-- Quick Actions -->
       <div style="margin-top: 4px;">

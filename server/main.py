@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from fastapi.middleware.gzip import GZipMiddleware
+
 from server import db
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,6 +23,8 @@ app = FastAPI(
     description="High-Speed Cadastral Boundary Portal",
     version="2.1.0"
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 

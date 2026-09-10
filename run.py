@@ -14,6 +14,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data", "fd_lms.db")
 
 def ensure_database():
+    from server import db
+    if db.is_supabase_enabled():
+        print("Connected to Supabase Cloud database backend.")
+        return
     if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) < 1024 * 1024:
         print("Notice: Spatial database not found or incomplete. Generating from shapefiles...")
         import subprocess

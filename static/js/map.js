@@ -185,12 +185,17 @@ const MapEngine = {
   currentBasemap: 'satellite',
   basemapLayers: {},
   canvasRenderer: null,
+  encroachRenderer: null,
   layers: {
+    allPlots: null,
+    forestPlots: null,
     csPlots: null,
     encroachments: null,
     highlight: null
   },
   geoLayers: {
+    allPlots: null,
+    forestPlots: null,
     cs: null,
     encroachments: null
   },
@@ -198,6 +203,10 @@ const MapEngine = {
   rawCSData: null,
   rawEncroachData: null,
   currentCSFeatures: [],
+  forestFeatures: [],
+  nonForestFeatures: [],
+  isAllPlotsVisible: true,
+  isForestPlotsVisible: true,
   isCSPlotsVisible: true,
   isEncroachmentsVisible: true,
   _plotClicked: false,
@@ -220,17 +229,19 @@ const MapEngine = {
       preferCanvas: true
     });
 
-    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
-    L.control.scale({ metric: true, imperial: false, position: 'bottomleft' }).addTo(this.map);
+    L.control.scale({ metric: true, imperial: false, position: 'bottomright' }).addTo(this.map);
 
     this.map.createPane('csPane');
     this.map.getPane('csPane').style.zIndex = 430;
+    this.map.getPane('csPane').style.pointerEvents = 'auto';
 
     this.map.createPane('encroachPane');
     this.map.getPane('encroachPane').style.zIndex = 450;
+    this.map.getPane('encroachPane').style.pointerEvents = 'none';
 
     // Set canvasRenderer pane explicitly to csPane with generous click tolerance
     this.canvasRenderer = L.canvas({ padding: 0.5, tolerance: 10, pane: 'csPane' });
+    this.encroachRenderer = L.svg({ pane: 'encroachPane' });
 
     this.map.createPane('highlightPane');
     this.map.getPane('highlightPane').style.zIndex = 480;
@@ -242,18 +253,37 @@ const MapEngine = {
 
     this.initBasemaps();
 
-    this.layers.csPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
+    this.layers.allPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
+    this.layers.forestPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
+    this.layers.csPlots = this.layers.allPlots;
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
     this.layers.highlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
 
     this.labelLayer = new PlotLabelLayer();
     this.map.addLayer(this.labelLayer);
 
-    // Map click only clears highlight if an actual empty space was clicked
-    this.map.on('click', () => {
+    // Map click: check if a plot was clicked
+    this.map.on('click', (e) => {
       if (this._plotClicked) {
         return;
       }
+      if (e.originalEvent && (e.originalEvent._stopped || e.originalEvent.defaultPrevented)) {
+        return;
+      }
+
+      // Check if clicked inside a CS / Forest plot
+      if (this.isAllPlotsVisible || this.isForestPlotsVisible) {
+        const clickedPlot = this.findPlotAtLatLng(e.latlng);
+        if (clickedPlot) {
+          this._plotClicked = true;
+          setTimeout(() => {
+            this._plotClicked = false;
+          }, 60);
+          this.selectPlot('cs_plot', clickedPlot);
+          return;
+        }
+      }
+
       this.clearHighlight();
       if (typeof Dossier !== 'undefined') Dossier.close();
     });
@@ -262,6 +292,22 @@ const MapEngine = {
       this.loadCSPlots(),
       this.loadEncroachments()
     ]);
+  },
+
+  showLoading(text = 'Loading Cadastral Parcels...') {
+    const el = document.getElementById('mapLoadingIndicator');
+    if (el) {
+      const span = el.querySelector('span');
+      if (span && text) span.textContent = text;
+      el.classList.remove('hidden');
+    }
+  },
+
+  hideLoading() {
+    const el = document.getElementById('mapLoadingIndicator');
+    if (el) {
+      el.classList.add('hidden');
+    }
   },
 
   initBasemaps() {
@@ -280,14 +326,18 @@ const MapEngine = {
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', tileOptions),
         L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { ...tileOptions, opacity: 0.85 })
       ]),
-      osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { ...tileOptions, maxNativeZoom: 19 }),
-      dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { ...tileOptions, maxNativeZoom: 19 })
+      street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { ...tileOptions, maxNativeZoom: 19 }),
+      osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { ...tileOptions, maxNativeZoom: 19 })
     };
 
+    if (!this.basemapLayers[this.currentBasemap]) {
+      this.currentBasemap = 'satellite';
+    }
     this.basemapLayers[this.currentBasemap].addTo(this.map);
   },
 
   setBasemap(name) {
+    if (name === 'osm') name = 'street';
     if (!this.basemapLayers[name] || this.currentBasemap === name) return;
     this.map.removeLayer(this.basemapLayers[this.currentBasemap]);
     this.basemapLayers[name].addTo(this.map);
@@ -295,7 +345,6 @@ const MapEngine = {
   },
 
   async loadCSPlots() {
-    const badge = document.getElementById('mapZoomStatus');
     let loadedFromCache = false;
 
     try {
@@ -304,16 +353,14 @@ const MapEngine = {
         this.rawCSData = cachedCS;
         this.renderCSPlotsGeoJSON(this.rawCSData);
         loadedFromCache = true;
-        if (badge) {
-          badge.innerHTML = `<i class="fa-solid fa-bolt text-success"></i> Instant Cache &bull; CS Plots: ${this.rawCSData.count.toLocaleString()} parcels loaded`;
-        }
+        this.hideLoading();
       }
     } catch (err) {
       console.warn('Cache lookup skipped:', err);
     }
 
-    if (!loadedFromCache && badge) {
-      badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Fast loading CS Plot Boundaries...`;
+    if (!loadedFromCache) {
+      this.showLoading('Loading Cadastral Parcels...');
     }
 
     try {
@@ -324,70 +371,259 @@ const MapEngine = {
         SpatialCache.set('cs_plots', csData);
         this.rawCSData = csData;
         this.renderCSPlotsGeoJSON(this.rawCSData);
-
-        if (badge) {
-          badge.innerHTML = `<i class="fa-solid fa-circle-check text-success"></i> Plot Boundary (CS): ${csData.count.toLocaleString()} parcels loaded`;
-        }
+        this.hideLoading();
 
         if (csData.bounds) {
           const [minx, miny, maxx, maxy] = csData.bounds;
           this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [30, 30] });
         }
-      } else if (!loadedFromCache && badge) {
-        badge.innerHTML = `<i class="fa-solid fa-circle-info text-warning"></i> 0 CS Parcels found`;
+      } else {
+        this.hideLoading();
       }
     } catch (e) {
+      this.hideLoading();
       if (!loadedFromCache) {
         console.error("Failed to load CS plots:", e);
-        if (badge) {
-          badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-danger"></i> Failed to load CS plots`;
-        }
       }
     }
   },
 
+  indexPlotBBoxes(features) {
+    if (!features || !features.length) return;
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      if (f._bbox) continue;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      const expand = (ring) => {
+        if (!ring) return;
+        for (let j = 0; j < ring.length; j++) {
+          const pt = ring[j];
+          if (pt[0] < minX) minX = pt[0];
+          if (pt[0] > maxX) maxX = pt[0];
+          if (pt[1] < minY) minY = pt[1];
+          if (pt[1] > maxY) maxY = pt[1];
+        }
+      };
+      const g = f.geometry;
+      if (!g) continue;
+      if (g.type === 'Polygon') {
+        if (g.coordinates && g.coordinates.length > 0) expand(g.coordinates[0]);
+      } else if (g.type === 'MultiPolygon') {
+        if (g.coordinates) {
+          for (let k = 0; k < g.coordinates.length; k++) {
+            if (g.coordinates[k] && g.coordinates[k].length > 0) expand(g.coordinates[k][0]);
+          }
+        }
+      }
+      f._bbox = [minX, minY, maxX, maxY];
+    }
+  },
+
+  findPlotAtLatLng(latlng) {
+    if (!latlng) return null;
+    if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return null;
+
+    let features = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+    if (!this.isAllPlotsVisible && this.isForestPlotsVisible) {
+      features = this.forestFeatures || [];
+    }
+    if (!features.length) return null;
+
+    const lng = latlng.lng;
+    const lat = latlng.lat;
+
+    const candidates = [];
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      const b = f._bbox;
+      if (b && lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3]) {
+        candidates.push(f);
+      }
+    }
+
+    if (!candidates.length) return null;
+
+    function pointInRing(x, y, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function pointInPolygon(x, y, coords) {
+      if (!coords || !coords.length) return false;
+      if (!pointInRing(x, y, coords[0])) return false;
+      for (let i = 1; i < coords.length; i++) {
+        if (pointInRing(x, y, coords[i])) return false;
+      }
+      return true;
+    }
+
+    const matched = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      const g = c.geometry;
+      if (!g) continue;
+      if (g.type === 'Polygon') {
+        if (pointInPolygon(lng, lat, g.coordinates)) matched.push(c);
+      } else if (g.type === 'MultiPolygon') {
+        if (g.coordinates) {
+          for (let k = 0; k < g.coordinates.length; k++) {
+            if (pointInPolygon(lng, lat, g.coordinates[k])) {
+              matched.push(c);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!matched.length) return null;
+
+    // If both layers are visible, prioritize Forest Department plot if matched
+    if (this.isForestPlotsVisible) {
+      const forestCandidate = matched.find(c => c.properties && c.properties.beat_name && c.properties.beat_name.trim());
+      if (forestCandidate) return forestCandidate;
+    }
+
+    return matched[0];
+  },
+
   renderCSPlotsGeoJSON(geojsonData) {
-    this.layers.csPlots.clearLayers();
+    if (this.layers.allPlots) this.layers.allPlots.clearLayers();
+    if (this.layers.forestPlots) this.layers.forestPlots.clearLayers();
+
     this.currentCSFeatures = (geojsonData && geojsonData.features) ? geojsonData.features : [];
+    this.forestFeatures = [];
+    this.nonForestFeatures = [];
+
+    for (let i = 0; i < this.currentCSFeatures.length; i++) {
+      const f = this.currentCSFeatures[i];
+      const p = f.properties;
+      if (p && p.beat_name && p.beat_name.trim()) {
+        this.forestFeatures.push(f);
+      } else {
+        this.nonForestFeatures.push(f);
+      }
+    }
+
+    this.indexPlotBBoxes(this.currentCSFeatures);
     this.updateLabels();
 
-    const geoLayer = L.geoJSON(geojsonData, {
+    // 1. Tier 1: Base Cadastral Grid (All 11,312 plots, subtle slate outline)
+    const allPlotsGeoLayer = L.geoJSON(geojsonData, {
       renderer: this.canvasRenderer,
+      interactive: true,
       style: () => ({
-        color: '#059669',
-        weight: 1.5,
-        opacity: 0.90,
-        fillColor: '#059669',
-        fillOpacity: 0.12
+        color: '#64748b',
+        weight: 0.9,
+        opacity: 0.55,
+        fillColor: '#64748b',
+        fillOpacity: 0.03,
+        interactive: true
       }),
       onEachFeature: (feature, layer) => {
-        layer.on('mouseover', () => {
-          this.map.getContainer().style.cursor = 'pointer';
-        });
-
-        layer.on('mouseout', () => {
-          this.map.getContainer().style.cursor = '';
-        });
-
-        layer.on('click', () => {
+        layer.on('click', (e) => {
+          if (e) {
+            if (e.originalEvent) {
+              e.originalEvent._stopped = true;
+              if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+            }
+            if (L.DomEvent && L.DomEvent.stopPropagation) {
+              L.DomEvent.stopPropagation(e);
+            }
+          }
           this._plotClicked = true;
           setTimeout(() => {
             this._plotClicked = false;
-          }, 150);
+          }, 60);
           this.selectPlot('cs_plot', feature);
         });
       }
     });
 
-    this.geoLayers.cs = geoLayer;
-    geoLayer.addTo(this.layers.csPlots);
+    this.geoLayers.allPlots = allPlotsGeoLayer;
+    this.geoLayers.cs = allPlotsGeoLayer;
+    allPlotsGeoLayer.addTo(this.layers.allPlots);
+
+    // 2. Tier 2: Forest Department Land (1,408 parcels, rich emerald green)
+    const forestGeoData = {
+      type: 'FeatureCollection',
+      features: this.forestFeatures
+    };
+
+    const forestGeoLayer = L.geoJSON(forestGeoData, {
+      renderer: this.canvasRenderer,
+      interactive: true,
+      style: () => ({
+        color: '#059669',
+        weight: 1.8,
+        opacity: 0.95,
+        fillColor: '#10b981',
+        fillOpacity: 0.18,
+        interactive: true
+      }),
+      onEachFeature: (feature, layer) => {
+        layer.on('click', (e) => {
+          if (e) {
+            if (e.originalEvent) {
+              e.originalEvent._stopped = true;
+              if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+            }
+            if (L.DomEvent && L.DomEvent.stopPropagation) {
+              L.DomEvent.stopPropagation(e);
+            }
+          }
+          this._plotClicked = true;
+          setTimeout(() => {
+            this._plotClicked = false;
+          }, 60);
+          this.selectPlot('cs_plot', feature);
+        });
+      }
+    });
+
+    this.geoLayers.forestPlots = forestGeoLayer;
+    forestGeoLayer.addTo(this.layers.forestPlots);
+  },
+
+  toggleAllPlots(visible) {
+    this.isAllPlotsVisible = visible;
+    if (visible) {
+      if (!this.map.hasLayer(this.layers.allPlots)) {
+        this.map.addLayer(this.layers.allPlots);
+      }
+    } else {
+      if (this.map.hasLayer(this.layers.allPlots)) {
+        this.map.removeLayer(this.layers.allPlots);
+      }
+    }
+    this.updateLabels();
+    this.updateActiveLayerCount();
+  },
+
+  toggleForestPlots(visible) {
+    this.isForestPlotsVisible = visible;
+    if (visible) {
+      if (!this.map.hasLayer(this.layers.forestPlots)) {
+        this.map.addLayer(this.layers.forestPlots);
+      }
+    } else {
+      if (this.map.hasLayer(this.layers.forestPlots)) {
+        this.map.removeLayer(this.layers.forestPlots);
+      }
+    }
+    this.updateLabels();
+    this.updateActiveLayerCount();
   },
 
   toggleCSPlots(visible) {
-    this.isCSPlotsVisible = visible;
-    if (visible) this.map.addLayer(this.layers.csPlots);
-    else this.map.removeLayer(this.layers.csPlots);
-    this.updateLabels();
+    this.toggleAllPlots(visible);
+    this.toggleForestPlots(visible);
   },
 
   async loadEncroachments() {
@@ -409,6 +645,8 @@ const MapEngine = {
 
     const geoLayer = L.geoJSON(geojsonData, {
       pane: 'encroachPane',
+      renderer: this.encroachRenderer,
+      interactive: true,
       style: () => ({
         color: '#ef4444',
         weight: 2.5,
@@ -418,53 +656,44 @@ const MapEngine = {
         dashArray: '5, 4'
       }),
       onEachFeature: (feature, layer) => {
-        const p = feature.properties || {};
-        const casesCount = p.encroached_cases_count || 1;
-        const areaAcre = p.encroached_area_acre ? Number(p.encroached_area_acre).toFixed(2) : '0.00';
-        const structs = p.structures || 'ঘরবাড়ী';
-        
-        layer.bindTooltip(`
-          <div style="font-family: var(--font-sans); font-size: 11px; line-height: 1.4; padding: 2px;">
-            <div style="font-weight: 700; color: #ef4444; margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
-              <i class="fa-solid fa-triangle-exclamation"></i> Plot #${p.plot_no} (${p.mouza || ''})
-            </div>
-            <div style="color: #f1f5f9;">Encroached: <b>${areaAcre} Ac</b> &bull; <b>${casesCount} Cases</b></div>
-            <div style="color: #cbd5e1; font-size: 10px;">Structure: ${structs}</div>
-          </div>
-        `, {
-          sticky: true,
-          direction: 'auto',
-          className: 'encroach-tooltip'
-        });
-
-        layer.on('mouseover', (e) => {
+        layer.on('mouseover', () => {
           this.map.getContainer().style.cursor = 'pointer';
-          const target = e.target;
-          if (target && target.setStyle) {
-            target.setStyle({
-              weight: 3.5,
-              fillOpacity: 0.45
-            });
-          }
         });
 
-        layer.on('mouseout', (e) => {
+        layer.on('mouseout', () => {
           this.map.getContainer().style.cursor = '';
-          const target = e.target;
-          if (target && target.setStyle) {
-            target.setStyle({
-              weight: 2.5,
-              fillOpacity: 0.28
-            });
-          }
         });
 
-        layer.on('click', () => {
+        layer.on('click', (e) => {
+          if (e) {
+            if (e.originalEvent) {
+              e.originalEvent._stopped = true;
+              if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+            }
+            if (L.DomEvent && L.DomEvent.stopPropagation) {
+              L.DomEvent.stopPropagation(e);
+            }
+          }
           this._plotClicked = true;
           setTimeout(() => {
             this._plotClicked = false;
-          }, 150);
-          this.selectPlot('cs_plot', feature);
+          }, 60);
+
+          // Resolve corresponding CS parcel feature to highlight the exact plot boundary
+          let csFeature = null;
+          const p = feature.properties || {};
+          const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+          if (p.uid) {
+            csFeature = allFeatures.find(f => f.properties && String(f.properties.uid) === String(p.uid));
+          }
+          if (!csFeature && p.id) {
+            csFeature = allFeatures.find(f => f.id == p.id || (f.properties && f.properties.id == p.id));
+          }
+          if (!csFeature && p.plot_no) {
+            csFeature = allFeatures.find(f => f.properties && String(f.properties.plot_no) === String(p.plot_no));
+          }
+
+          this.selectPlot('cs_plot', csFeature || feature);
         });
       }
     });
@@ -484,6 +713,7 @@ const MapEngine = {
         this.map.removeLayer(this.layers.encroachments);
       }
     }
+    this.updateActiveLayerCount();
   },
 
   focusEncroachments() {
@@ -508,20 +738,40 @@ const MapEngine = {
     if (!this.labelLayer) return;
     const labels = [];
 
-    if (this.isCSPlotsVisible && this.currentCSFeatures) {
+    const showAll = this.isAllPlotsVisible;
+    const showForest = this.isForestPlotsVisible;
+
+    if ((showAll || showForest) && this.currentCSFeatures) {
       for (let i = 0; i < this.currentCSFeatures.length; i++) {
-        const p = this.currentCSFeatures[i].properties;
-        if (p && p.plot_no && p.label_lat && p.label_lng) {
-          labels.push({ 
-            latlng: [p.label_lat, p.label_lng], 
-            radius: p.label_radius || 0,
-            text: String(p.plot_no)
-          });
+        const feat = this.currentCSFeatures[i];
+        const p = feat.properties;
+        if (!p || !p.plot_no || !p.label_lat || !p.label_lng) continue;
+
+        const isForest = Boolean(p.beat_name && p.beat_name.trim());
+        // If only forest plots are visible, skip non-forest plot labels
+        if (!showAll && showForest && !isForest) {
+          continue;
         }
+
+        labels.push({ 
+          latlng: [p.label_lat, p.label_lng], 
+          radius: p.label_radius || 0,
+          text: String(p.plot_no)
+        });
       }
     }
 
     this.labelLayer.setLabels(labels);
+  },
+
+  updateActiveLayerCount() {
+    const badge = document.getElementById('layerCountBadge');
+    if (!badge) return;
+    let count = 0;
+    if (this.isAllPlotsVisible) count++;
+    if (this.isForestPlotsVisible) count++;
+    if (this.isEncroachmentsVisible) count++;
+    badge.textContent = `${count} Active`;
   },
 
   highlightPlot(feature) {

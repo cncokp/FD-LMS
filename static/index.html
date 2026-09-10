@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260910_06" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_01" />
 </head>
 <body>
   <div id="app-container">
@@ -22,32 +22,13 @@
     <!-- Minimalist Top Navigation Bar -->
     <header class="top-nav">
       <div class="nav-brand">
-        <div class="brand-logo">
-          <i class="fa-solid fa-tree"></i>
+        <img src="/static/bdfd_logo.svg" alt="Forest Department Logo" class="brand-logo-img brand-logo-left" />
+        <div class="brand-titles">
+          <div class="brand-title-primary">Forest Land and Encroachment Management System</div>
+          <div class="brand-title-secondary">Forest Department</div>
+          <div class="brand-title-tertiary">Government of the People's Republic of Bangladesh</div>
         </div>
-        <div class="brand-text">
-          <h1>FD-LMS</h1>
-          <span class="subtext">Cadastral Boundary Portal</span>
-        </div>
-      </div>
-
-      <!-- Search & Controls -->
-      <div class="nav-controls">
-        <div class="search-box-wrapper">
-          <i class="fa-solid fa-magnifying-glass search-icon"></i>
-          <input type="text" id="searchInput" placeholder="Search by Plot # or Mouza..." autocomplete="off" />
-          <div id="searchResults" class="search-dropdown hidden"></div>
-        </div>
-
-        <button class="btn btn-danger-outline btn-sm" id="btnQuickEncroach" title="View 15 Encroached Parcels (59.83 Acres • 224 Cases)">
-          <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i>
-          <span>Encroached (15)</span>
-        </button>
-
-        <button class="btn btn-outline btn-sm" id="btnExport" title="Export Plot Boundaries to CSV">
-          <i class="fa-solid fa-arrow-down-to-line"></i>
-          <span>Export CSV</span>
-        </button>
+        <img src="/static/gob_logo.svg" alt="Government of Bangladesh Logo" class="brand-logo-img brand-logo-right" />
       </div>
     </header>
 
@@ -57,27 +38,78 @@
       <!-- Interactive Leaflet Map -->
       <div id="map"></div>
 
-      <!-- Bottom Map Info Badge -->
-      <div class="map-info-badge" id="mapInfoBadge">
-        <i class="fa-solid fa-circle-check text-success"></i>
-        <span id="mapZoomStatus">Plot Boundary (CS) loaded &bull; Zero reload</span>
+      <!-- Dynamic Map Loading Indicator -->
+      <div class="map-loading-indicator hidden" id="mapLoadingIndicator">
+        <div class="spinner-ring"></div>
+        <span>Loading Cadastral Parcels...</span>
       </div>
 
-      <!-- Left Floating Layer & Basemap Control -->
+      <!-- Bottom-Left Map Controls: Basemap Switcher above Zoom Controls -->
+      <div class="bottom-left-controls" id="bottomLeftControls">
+        <!-- Basemap Switcher Widget -->
+        <div class="basemap-control-wrapper" id="basemapControlWrapper">
+          <button class="map-ctrl-btn" id="btnBasemapToggle" title="Switch Basemap" aria-label="Switch Basemap">
+            <i class="fa-solid fa-earth-americas"></i>
+          </button>
+          <div class="basemap-picker-popup hidden" id="basemapPickerPopup">
+            <div class="basemap-picker-header">Basemap</div>
+            <div class="basemap-picker-options">
+              <button class="basemap-picker-item active" data-basemap="satellite">
+                <i class="fa-solid fa-satellite"></i>
+                <span>Satellite</span>
+              </button>
+              <button class="basemap-picker-item" data-basemap="hybrid">
+                <i class="fa-solid fa-layer-group"></i>
+                <span>Hybrid</span>
+              </button>
+              <button class="basemap-picker-item" data-basemap="street">
+                <i class="fa-solid fa-road"></i>
+                <span>Street View</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Zoom Controls -->
+        <div class="zoom-control-wrapper">
+          <button class="map-ctrl-btn" id="btnZoomIn" title="Zoom in" aria-label="Zoom in">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+          <div class="map-ctrl-divider"></div>
+          <button class="map-ctrl-btn" id="btnZoomOut" title="Zoom out" aria-label="Zoom out">
+            <i class="fa-solid fa-minus"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Left Floating Cadastral Layer Control -->
       <div class="map-widget-container" id="mapWidgetContainer">
         
         <!-- Tab Bar -->
         <div class="horizontal-tab-bar" id="horizontalTabBar" role="tablist">
-          <button class="tab-btn active" id="tabBtnLayers" role="tab" title="Map Layers & Basemap">
+          <button class="tab-btn active" id="tabBtnLayers" role="tab" title="Cadastral Layers">
             <i class="fa-solid fa-layer-group"></i>
-            <span>Layers & Basemap</span>
+            <span>Layers</span>
           </button>
+          <div class="tab-divider"></div>
+          <div class="expandable-search-container" id="expandableSearchContainer">
+            <button class="tab-btn-icon" id="btnToggleSearch" title="Search Plot or Mouza">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+            <div class="search-input-wrapper" id="searchInputWrapper">
+              <input type="text" id="searchInput" placeholder="Search Plot # or Mouza..." autocomplete="off" />
+              <button class="btn-clear-search hidden" id="btnClearSearch" title="Clear search">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <div id="searchResults" class="search-dropdown hidden"></div>
+          </div>
         </div>
 
         <!-- Expandable Panel -->
         <div class="dropdown-panel" id="dropdownPanel">
           <div class="panel-header-mini">
-            <h3 id="panelHeaderTitle"><i class="fa-solid fa-layer-group"></i> Basemap & Cadastral Layers</h3>
+            <h3 id="panelHeaderTitle"><i class="fa-solid fa-layer-group"></i> Cadastral Layers</h3>
             <button class="btn-icon" id="btnCloseDropdownPanel" title="Collapse Panel">
               <i class="fa-solid fa-chevron-up"></i>
             </button>
@@ -85,49 +117,47 @@
 
           <div class="panel-scroll-body">
             <div class="flyout-view" id="viewLayers">
-              <!-- Basemap Selection -->
-              <div class="control-group">
-                <label class="control-label"><i class="fa-solid fa-earth-americas"></i> Basemap</label>
-                <div class="basemap-options">
-                  <button class="btn-basemap active" data-basemap="satellite">
-                    <i class="fa-solid fa-satellite"></i> Satellite
-                  </button>
-                  <button class="btn-basemap" data-basemap="hybrid">
-                    <i class="fa-solid fa-map"></i> Hybrid
-                  </button>
-                  <button class="btn-basemap" data-basemap="osm">
-                    <i class="fa-solid fa-road"></i> Streets
-                  </button>
-                  <button class="btn-basemap" data-basemap="dark">
-                    <i class="fa-solid fa-moon"></i> Dark
-                  </button>
-                </div>
-              </div>
-
               <!-- Cadastral Layer Toggles -->
-              <div class="control-group" style="margin-top: 14px;">
+              <div class="control-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                   <label class="control-label"><i class="fa-solid fa-toggle-on"></i> Cadastral Boundaries</label>
-                  <span id="layerCountBadge" style="font-size: 10px; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 700;">2 Active</span>
+                  <span id="layerCountBadge" style="font-size: 10px; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 700;">3 Active</span>
                 </div>
                 
                 <div id="layerListContainer" style="display: flex; flex-direction: column; gap: 8px;">
                   
-                  <!-- 1. Plot Boundary (CS) Layer -->
+                  <!-- 1. All Plot Boundaries (CS) -->
                   <div class="layer-item">
                     <label class="toggle-switch">
-                      <input type="checkbox" id="toggleCSPlots" checked />
-                      <span class="slider green"></span>
+                      <input type="checkbox" id="toggleAllPlots" checked />
+                      <span class="slider slate"></span>
                     </label>
                     <div class="layer-desc">
-                      <span class="layer-title">Plot Boundary (CS)</span>
+                      <span class="layer-title">All Cadastral Plots (CS)</span>
                       <span class="layer-legend-pill">
-                        <span class="dot green" style="background-color: #059669;"></span> 11,312 Parcels
+                        <span class="dot slate"></span> 11,312 Parcels &bull; Base Grid
                       </span>
                     </div>
                   </div>
 
-                  <!-- 2. Encroachment Layer -->
+                  <!-- 2. Forest Land Plots (FD) -->
+                  <div class="layer-item highlight-green">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="toggleForestPlots" checked />
+                      <span class="slider green"></span>
+                    </label>
+                    <div class="layer-desc">
+                      <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                        <span class="layer-title" style="color: #6ee7b7;">Forest Department Land</span>
+                        <span style="font-size: 9px; font-weight: 700; color: #34d399; background: rgba(16, 185, 129, 0.2); padding: 1px 5px; border-radius: 3px;">FD ESTATE</span>
+                      </div>
+                      <span class="layer-legend-pill">
+                        <span class="dot green" style="background-color: #059669;"></span> 1,408 Parcels &bull; 7 Beats
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 3. Encroached Parcels Alert Layer -->
                   <div class="layer-item highlight-red">
                     <label class="toggle-switch">
                       <input type="checkbox" id="toggleEncroachments" checked />
@@ -195,8 +225,8 @@
   </script>
   <!-- Leaflet & App Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/static/js/dossier.js?v=20260910_06"></script>
-  <script src="/static/js/map.js?v=20260910_06"></script>
-  <script src="/static/js/app.js?v=20260910_06"></script>
+  <script src="/static/js/dossier.js?v=20260911_01"></script>
+  <script src="/static/js/map.js?v=20260911_01"></script>
+  <script src="/static/js/app.js?v=20260911_01"></script>
 </body>
 </html>
