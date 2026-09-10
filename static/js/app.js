@@ -77,6 +77,20 @@ function setupLayerToggles() {
       MapEngine.toggleCSPlots(e.target.checked);
     });
   }
+
+  const toggleEncroachments = document.getElementById('toggleEncroachments');
+  if (toggleEncroachments) {
+    toggleEncroachments.addEventListener('change', (e) => {
+      MapEngine.toggleEncroachments(e.target.checked);
+    });
+  }
+
+  const btnQuickEncroach = document.getElementById('btnQuickEncroach');
+  if (btnQuickEncroach) {
+    btnQuickEncroach.addEventListener('click', () => {
+      MapEngine.focusEncroachments();
+    });
+  }
 }
 
 function setupSearchAutocomplete() {

@@ -28,6 +28,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e
 # In-memory cached JSON bytes for CS plots
 _cs_cache_bytes: Optional[bytes] = None
 _rs_cache_bytes: Optional[bytes] = None
+_encroach_cache_bytes: Optional[bytes] = None
 
 def is_supabase_pg_enabled() -> bool:
     return bool(SUPABASE_DB_URL)
@@ -329,10 +330,38 @@ def get_rs_plots_json_bytes(
 ) -> bytes:
     return b'{"type":"FeatureCollection","count":0,"bounds":null,"features":[]}'
 
-def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_parcel_dossier_payload(
+    plot: Dict[str, Any], 
+    parcel_records: List[Dict[str, Any]], 
+    encroachment_records: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
     bounds = [plot["minx"], plot["miny"], plot["maxx"], plot["maxy"]]
     beat_name = plot.get("beat_name")
     plot_uid = str(plot.get("uid") or "")
+
+    encroach_list = []
+    if encroachment_records:
+        for er in encroachment_records:
+            encroach_list.append({
+                "encroacher_name": er.get("encroacher_name"),
+                "cs_plot_no": er.get("cs_plot_no"),
+                "rs_plot_no": er.get("rs_plot_no"),
+                "rs_khatian": er.get("rs_khatian"),
+                "sec_20": er.get("sec_20"),
+                "sec_6": er.get("sec_6"),
+                "encroached_area_acre": er.get("encroached_area_acre"),
+                "structure_type": er.get("structure_type"),
+                "action_taken": er.get("action_taken")
+            })
+    has_encroachment = len(encroach_list) > 0
+    total_encroached_acre = round(sum(float(r["encroached_area_acre"]) for r in encroach_list if r.get("encroached_area_acre") is not None), 4) if has_encroachment else 0.0
+
+    encroachment_payload = {
+        "has_encroachment": has_encroachment,
+        "count": len(encroach_list),
+        "total_encroached_acre": total_encroached_acre,
+        "records": encroach_list
+    }
 
     if not parcel_records:
         return {
@@ -359,7 +388,8 @@ def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dic
                 "total_area_fd": None,
                 "total_area_others": None,
                 "linked_rs_plots": []
-            }
+            },
+            "encroachment": encroachment_payload
         }
 
     first_rec = parcel_records[0]
@@ -437,7 +467,8 @@ def _build_parcel_dossier_payload(plot: Dict[str, Any], parcel_records: List[Dic
             "khatian_no": ", ".join(khatians) if khatians else None,
             "remarks": "; ".join(remarks_list) if remarks_list else None,
             "linked_rs_plots": linked_rs
-        }
+        },
+        "encroachment": encroachment_payload
     }
 
 def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
@@ -452,6 +483,7 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
                     plot = cur.fetchone()
                     if plot:
                         parcel_records = []
+                        encroachment_records = []
                         if plot.get("uid"):
                             cur.execute("""
                             SELECT cs_uid, rs_uid, range, beat_name, mouza, cs_jl, rs_jl,
@@ -462,7 +494,17 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
                             ORDER BY id
                             """, (plot["uid"],))
                             parcel_records = [dict(r) for r in cur.fetchall()]
-                        return _build_parcel_dossier_payload(plot, parcel_records)
+
+                            cur.execute("""
+                            SELECT uid, district, upazila, range, beat_name, mouza,
+                                   encroacher_name, cs_plot_no, rs_plot_no, rs_khatian,
+                                   sec_20, sec_6, encroached_area_acre, structure_type, action_taken
+                            FROM encroachment_info
+                            WHERE uid = %s
+                            ORDER BY id
+                            """, (str(plot["uid"]),))
+                            encroachment_records = [dict(r) for r in cur.fetchall()]
+                        return _build_parcel_dossier_payload(plot, parcel_records, encroachment_records)
         except Exception as e:
             print(f"Supabase PG dossier error ({e}), trying Cloud API...")
 
@@ -473,10 +515,16 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
             if rows:
                 plot = rows[0]
                 parcel_records = []
+                encroachment_records = []
                 if plot.get("uid"):
                     p_resp = _supabase_request(f"parcel_info?cs_uid=eq.{urllib.parse.quote(str(plot['uid']))}&select=*&order=id")
                     parcel_records = json.loads(p_resp.read().decode("utf-8"))
-                return _build_parcel_dossier_payload(plot, parcel_records)
+                    try:
+                        e_resp = _supabase_request(f"encroachment_info?uid=eq.{urllib.parse.quote(str(plot['uid']))}&select=*&order=id")
+                        encroachment_records = json.loads(e_resp.read().decode("utf-8"))
+                    except Exception as ee:
+                        print(f"Encroachment fetch error: {ee}")
+                return _build_parcel_dossier_payload(plot, parcel_records, encroachment_records)
         except Exception as e:
             print(f"Supabase Cloud API dossier error ({e}), falling back to SQLite...")
 
@@ -491,6 +539,7 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
             return None
         plot = dict(row)
         parcel_records = []
+        encroachment_records = []
         if plot.get("uid"):
             cur.execute("""
             SELECT cs_uid, rs_uid, range, beat_name, mouza, cs_jl, rs_jl,
@@ -501,7 +550,159 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
             ORDER BY id
             """, (plot["uid"],))
             parcel_records = [dict(r) for r in cur.fetchall()]
-        return _build_parcel_dossier_payload(plot, parcel_records)
+
+            cur.execute("""
+            SELECT uid, district, upazila, range, beat_name, mouza,
+                   encroacher_name, cs_plot_no, rs_plot_no, rs_khatian,
+                   sec_20, sec_6, encroached_area_acre, structure_type, action_taken
+            FROM encroachment_info
+            WHERE uid = ?
+            ORDER BY id
+            """, (str(plot["uid"]),))
+            encroachment_records = [dict(r) for r in cur.fetchall()]
+        return _build_parcel_dossier_payload(plot, parcel_records, encroachment_records)
+
+def get_encroachment_summary() -> Dict[str, Any]:
+    if is_supabase_cloud_enabled():
+        try:
+            resp = _supabase_request("encroachment_info?select=uid,encroached_area_acre")
+            rows = json.loads(resp.read().decode("utf-8"))
+            uids = set(str(r["uid"]) for r in rows if r.get("uid"))
+            total_cases = len(rows)
+            total_acre = round(sum(float(r["encroached_area_acre"]) for r in rows if r.get("encroached_area_acre")), 2)
+            return {
+                "total_parcels": len(uids),
+                "total_cases": total_cases,
+                "total_encroached_acre": total_acre,
+                "status": "Active"
+            }
+        except Exception as e:
+            print(f"Supabase encroachment summary error: {e}")
+
+    with get_sqlite_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+        SELECT COUNT(DISTINCT uid), COUNT(*), ROUND(SUM(COALESCE(encroached_area_acre, 0)), 2)
+        FROM encroachment_info
+        """)
+        uids_count, total_cases, total_acre = cur.fetchone()
+        return {
+            "total_parcels": uids_count or 0,
+            "total_cases": total_cases or 0,
+            "total_encroached_acre": total_acre or 0.0,
+            "status": "Active"
+        }
+
+def get_encroachment_geojson_bytes() -> bytes:
+    global _encroach_cache_bytes
+    if _encroach_cache_bytes is not None:
+        return _encroach_cache_bytes
+
+    # 1. Fetch encroachment summary per uid
+    encroach_agg = {}
+    all_encroach_rows = []
+
+    if is_supabase_cloud_enabled():
+        try:
+            resp = _supabase_request("encroachment_info?select=uid,encroacher_name,encroached_area_acre,structure_type,action_taken&order=id")
+            all_encroach_rows = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            print(f"Supabase Cloud encroachment fetch error: {e}")
+
+    if not all_encroach_rows:
+        with get_sqlite_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT uid, encroacher_name, encroached_area_acre, structure_type, action_taken FROM encroachment_info ORDER BY id")
+            all_encroach_rows = [dict(r) for r in cur.fetchall()]
+
+    for r in all_encroach_rows:
+        u = str(r["uid"])
+        if u not in encroach_agg:
+            encroach_agg[u] = {
+                "count": 0,
+                "total_acre": 0.0,
+                "structures": set(),
+                "actions": set()
+            }
+        encroach_agg[u]["count"] += 1
+        if r.get("encroached_area_acre"):
+            encroach_agg[u]["total_acre"] += float(r["encroached_area_acre"])
+        if r.get("structure_type"):
+            encroach_agg[u]["structures"].add(r["structure_type"].strip())
+        if r.get("action_taken"):
+            act = r["action_taken"].strip().replace("\n", " ")
+            if len(act) > 40:
+                act = act[:37] + "..."
+            encroach_agg[u]["actions"].add(act)
+
+    # 2. Fetch encroached cs_plots polygons
+    plot_rows = []
+    if is_supabase_cloud_enabled():
+        try:
+            resp = _supabase_request("cs_plots?is_encroached=eq.1&select=id,uid,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson&order=id")
+            plot_rows = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            print(f"Supabase Cloud encroached plots error: {e}")
+
+    if not plot_rows:
+        with get_sqlite_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+            SELECT id, uid, plot_no, mouza, jl_no, area_acre, beat_name,
+                   label_lat, label_lng, label_radius, minx, maxx, miny, maxy, geojson
+            FROM cs_plots
+            WHERE is_encroached = 1
+            ORDER BY id
+            """)
+            plot_rows = [dict(r) for r in cur.fetchall()]
+
+    # 3. Assemble GeoJSON
+    feat_strs = []
+    minx_agg, miny_agg, maxx_agg, maxy_agg = 180.0, 90.0, -180.0, -90.0
+
+    for r in plot_rows:
+        rx1, rx2, ry1, ry2 = float(r["minx"]), float(r["maxx"]), float(r["miny"]), float(r["maxy"])
+        if rx1 < minx_agg: minx_agg = rx1
+        if ry1 < miny_agg: miny_agg = ry1
+        if rx2 > maxx_agg: maxx_agg = rx2
+        if ry2 > maxy_agg: maxy_agg = ry2
+
+        pid = r["id"]
+        uid_str = str(r.get("uid") or "")
+        agg_info = encroach_agg.get(uid_str, {"count": 0, "total_acre": 0.0, "structures": set(), "actions": set()})
+
+        uid_val = json.dumps(uid_str)
+        pno = json.dumps(r["plot_no"] or "")
+        mouza = json.dumps(r["mouza"] or "")
+        jl = json.dumps(r["jl_no"] or "")
+        beat = json.dumps(r.get("beat_name") or "")
+        area = str(r["area_acre"] or 0)
+        llat = str(r["label_lat"] or 0)
+        llng = str(r["label_lng"] or 0)
+        lrad = str(r.get("label_radius") or 0)
+        
+        cases_cnt = agg_info["count"]
+        enc_acre = round(agg_info["total_acre"], 2)
+        structs = json.dumps(", ".join(sorted(agg_info["structures"])) if agg_info["structures"] else "ঘরবাড়ী")
+        acts = json.dumps("; ".join(sorted(agg_info["actions"])) if agg_info["actions"] else "উচ্ছেদ প্রস্তাব প্রেরণ")
+
+        geom = r["geojson"]
+        geom_str = json.dumps(geom) if isinstance(geom, dict) else str(geom)
+
+        feat_strs.append(
+            f'{{"type":"Feature","id":{pid},'
+            f'"properties":{{"id":{pid},"uid":{uid_val},"plot_no":{pno},"mouza":{mouza},"jl_no":{jl},"beat_name":{beat},'
+            f'"area_acre":{area},"label_lat":{llat},"label_lng":{llng},"label_radius":{lrad},'
+            f'"is_encroached":1,"encroached_cases_count":{cases_cnt},"encroached_area_acre":{enc_acre},'
+            f'"structures":{structs},"actions":{acts}}},'
+            f'"geometry":{geom_str}}}'
+        )
+
+    bounds_str = f'[{round(minx_agg, 5)},{round(miny_agg, 5)},{round(maxx_agg, 5)},{round(maxy_agg, 5)}]' if plot_rows else 'null'
+    full_json = f'{{"type":"FeatureCollection","count":{len(feat_strs)},"bounds":{bounds_str},"features":[{",".join(feat_strs)}]}}'
+    _encroach_cache_bytes = full_json.encode("utf-8")
+    return _encroach_cache_bytes
+
 
 def get_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
     return get_cs_plot_dossier(plot_id)

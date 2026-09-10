@@ -87,6 +87,15 @@ def get_cs_plots(
     json_bytes = db.get_cs_plots_json_bytes(bbox=bbox, plot_no=plot_no, uid=uid, limit=limit)
     return Response(content=json_bytes, media_type="application/json")
 
+@app.get("/api/encroachments/geojson")
+def get_encroachments_geojson():
+    json_bytes = db.get_encroachment_geojson_bytes()
+    return Response(content=json_bytes, media_type="application/json")
+
+@app.get("/api/encroachments/summary")
+def get_encroachments_summary():
+    return db.get_encroachment_summary()
+
 @app.get("/api/plots/cs/{plot_id}")
 def get_cs_plot_dossier(plot_id: int):
     dossier = db.get_cs_plot_dossier(plot_id)

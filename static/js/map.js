@@ -187,15 +187,19 @@ const MapEngine = {
   canvasRenderer: null,
   layers: {
     csPlots: null,
+    encroachments: null,
     highlight: null
   },
   geoLayers: {
-    cs: null
+    cs: null,
+    encroachments: null
   },
   labelLayer: null,
   rawCSData: null,
+  rawEncroachData: null,
   currentCSFeatures: [],
   isCSPlotsVisible: true,
+  isEncroachmentsVisible: true,
   _plotClicked: false,
 
   defaultParkBounds: [
@@ -222,6 +226,9 @@ const MapEngine = {
     this.map.createPane('csPane');
     this.map.getPane('csPane').style.zIndex = 430;
 
+    this.map.createPane('encroachPane');
+    this.map.getPane('encroachPane').style.zIndex = 450;
+
     // Set canvasRenderer pane explicitly to csPane with generous click tolerance
     this.canvasRenderer = L.canvas({ padding: 0.5, tolerance: 10, pane: 'csPane' });
 
@@ -236,6 +243,7 @@ const MapEngine = {
     this.initBasemaps();
 
     this.layers.csPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
+    this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
     this.layers.highlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
 
     this.labelLayer = new PlotLabelLayer();
@@ -250,7 +258,10 @@ const MapEngine = {
       if (typeof Dossier !== 'undefined') Dossier.close();
     });
 
-    await this.loadCSPlots();
+    await Promise.all([
+      this.loadCSPlots(),
+      this.loadEncroachments()
+    ]);
   },
 
   initBasemaps() {
@@ -377,6 +388,120 @@ const MapEngine = {
     if (visible) this.map.addLayer(this.layers.csPlots);
     else this.map.removeLayer(this.layers.csPlots);
     this.updateLabels();
+  },
+
+  async loadEncroachments() {
+    try {
+      const res = await fetch('/api/encroachments/geojson');
+      const data = await res.json();
+      if (data && data.features && data.features.length > 0) {
+        this.rawEncroachData = data;
+        this.renderEncroachmentsGeoJSON(data);
+      }
+    } catch (e) {
+      console.error("Failed to load encroachments:", e);
+    }
+  },
+
+  renderEncroachmentsGeoJSON(geojsonData) {
+    this.layers.encroachments.clearLayers();
+    if (!geojsonData || !geojsonData.features) return;
+
+    const geoLayer = L.geoJSON(geojsonData, {
+      pane: 'encroachPane',
+      style: () => ({
+        color: '#ef4444',
+        weight: 2.5,
+        opacity: 0.95,
+        fillColor: '#ef4444',
+        fillOpacity: 0.28,
+        dashArray: '5, 4'
+      }),
+      onEachFeature: (feature, layer) => {
+        const p = feature.properties || {};
+        const casesCount = p.encroached_cases_count || 1;
+        const areaAcre = p.encroached_area_acre ? Number(p.encroached_area_acre).toFixed(2) : '0.00';
+        const structs = p.structures || 'ঘরবাড়ী';
+        
+        layer.bindTooltip(`
+          <div style="font-family: var(--font-sans); font-size: 11px; line-height: 1.4; padding: 2px;">
+            <div style="font-weight: 700; color: #ef4444; margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+              <i class="fa-solid fa-triangle-exclamation"></i> Plot #${p.plot_no} (${p.mouza || ''})
+            </div>
+            <div style="color: #f1f5f9;">Encroached: <b>${areaAcre} Ac</b> &bull; <b>${casesCount} Cases</b></div>
+            <div style="color: #cbd5e1; font-size: 10px;">Structure: ${structs}</div>
+          </div>
+        `, {
+          sticky: true,
+          direction: 'auto',
+          className: 'encroach-tooltip'
+        });
+
+        layer.on('mouseover', (e) => {
+          this.map.getContainer().style.cursor = 'pointer';
+          const target = e.target;
+          if (target && target.setStyle) {
+            target.setStyle({
+              weight: 3.5,
+              fillOpacity: 0.45
+            });
+          }
+        });
+
+        layer.on('mouseout', (e) => {
+          this.map.getContainer().style.cursor = '';
+          const target = e.target;
+          if (target && target.setStyle) {
+            target.setStyle({
+              weight: 2.5,
+              fillOpacity: 0.28
+            });
+          }
+        });
+
+        layer.on('click', () => {
+          this._plotClicked = true;
+          setTimeout(() => {
+            this._plotClicked = false;
+          }, 150);
+          this.selectPlot('cs_plot', feature);
+        });
+      }
+    });
+
+    this.geoLayers.encroachments = geoLayer;
+    geoLayer.addTo(this.layers.encroachments);
+  },
+
+  toggleEncroachments(visible) {
+    this.isEncroachmentsVisible = visible;
+    if (visible) {
+      if (!this.map.hasLayer(this.layers.encroachments)) {
+        this.map.addLayer(this.layers.encroachments);
+      }
+    } else {
+      if (this.map.hasLayer(this.layers.encroachments)) {
+        this.map.removeLayer(this.layers.encroachments);
+      }
+    }
+  },
+
+  focusEncroachments() {
+    const toggle = document.getElementById('toggleEncroachments');
+    if (toggle && !toggle.checked) {
+      toggle.checked = true;
+      this.toggleEncroachments(true);
+    }
+
+    if (this.rawEncroachData && this.rawEncroachData.bounds) {
+      const [minx, miny, maxx, maxy] = this.rawEncroachData.bounds;
+      this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [50, 50], maxZoom: 16 });
+    } else if (this.layers.encroachments) {
+      const b = this.layers.encroachments.getBounds();
+      if (b.isValid()) {
+        this.map.fitBounds(b, { padding: [50, 50], maxZoom: 16 });
+      }
+    }
   },
 
   updateLabels() {

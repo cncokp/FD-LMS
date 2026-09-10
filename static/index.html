@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260910_05" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260910_06" />
 </head>
 <body>
   <div id="app-container">
@@ -38,6 +38,11 @@
           <input type="text" id="searchInput" placeholder="Search by Plot # or Mouza..." autocomplete="off" />
           <div id="searchResults" class="search-dropdown hidden"></div>
         </div>
+
+        <button class="btn btn-danger-outline btn-sm" id="btnQuickEncroach" title="View 15 Encroached Parcels (59.83 Acres • 224 Cases)">
+          <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i>
+          <span>Encroached (15)</span>
+        </button>
 
         <button class="btn btn-outline btn-sm" id="btnExport" title="Export Plot Boundaries to CSV">
           <i class="fa-solid fa-arrow-down-to-line"></i>
@@ -103,7 +108,7 @@
               <div class="control-group" style="margin-top: 14px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                   <label class="control-label"><i class="fa-solid fa-toggle-on"></i> Cadastral Boundaries</label>
-                  <span id="layerCountBadge" style="font-size: 10px; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 700;">1 Active</span>
+                  <span id="layerCountBadge" style="font-size: 10px; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 6px; border-radius: 4px; font-weight: 700;">2 Active</span>
                 </div>
                 
                 <div id="layerListContainer" style="display: flex; flex-direction: column; gap: 8px;">
@@ -118,6 +123,23 @@
                       <span class="layer-title">Plot Boundary (CS)</span>
                       <span class="layer-legend-pill">
                         <span class="dot green" style="background-color: #059669;"></span> 11,312 Parcels
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 2. Encroachment Layer -->
+                  <div class="layer-item highlight-red">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="toggleEncroachments" checked />
+                      <span class="slider red"></span>
+                    </label>
+                    <div class="layer-desc">
+                      <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                        <span class="layer-title" style="color: #fca5a5;">Encroached Parcels</span>
+                        <span style="font-size: 9px; font-weight: 700; color: #f87171; background: rgba(239, 68, 68, 0.2); padding: 1px 5px; border-radius: 3px;">15 PLOTS</span>
+                      </div>
+                      <span class="layer-legend-pill">
+                        <span class="dot red" style="background-color: #ef4444;"></span> 59.83 Acres &bull; 224 Cases
                       </span>
                     </div>
                   </div>
@@ -173,8 +195,8 @@
   </script>
   <!-- Leaflet & App Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/static/js/dossier.js?v=20260910_05"></script>
-  <script src="/static/js/map.js?v=20260910_05"></script>
-  <script src="/static/js/app.js?v=20260910_05"></script>
+  <script src="/static/js/dossier.js?v=20260910_06"></script>
+  <script src="/static/js/map.js?v=20260910_06"></script>
+  <script src="/static/js/app.js?v=20260910_06"></script>
 </body>
 </html>
