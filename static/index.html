@@ -4,17 +4,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FD-LMS | Forest Land and Encroachment Management System</title>
-  
+
+  <!-- DNS + TLS pre-negotiation for CDN origins -->
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin>
+
+  <!-- Preload critical local assets -->
+  <link rel="preload" href="/static/bdfd_logo.svg" as="image" type="image/svg+xml">
+  <link rel="preload" href="/static/gob_logo.svg"  as="image" type="image/svg+xml">
+
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <!-- Google Fonts & Font Awesome -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  
+
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_07" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_08" />
+
 </head>
 <body>
   <div id="app-container">
@@ -284,7 +294,7 @@
     </main>
   </div>
 
-  <!-- Cache Purge & Fresh Assets -->
+  <!-- Cache Purge & Fresh Assets (runs immediately, before deferred scripts) -->
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(regs) {
@@ -297,10 +307,10 @@
       });
     }
   </script>
-  <!-- Leaflet & App Scripts -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/static/js/dossier.js?v=20260911_06"></script>
-  <script src="/static/js/map.js?v=20260911_06"></script>
-  <script src="/static/js/app.js?v=20260911_06"></script>
+  <!-- Leaflet & App Scripts — defer keeps HTML parsing non-blocking; order is preserved -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+  <script src="/static/js/dossier.js?v=20260911_08" defer></script>
+  <script src="/static/js/map.js?v=20260911_08" defer></script>
+  <script src="/static/js/app.js?v=20260911_08" defer></script>
 </body>
 </html>

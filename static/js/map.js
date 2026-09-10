@@ -645,10 +645,27 @@ const MapEngine = {
   },
 
   async loadBeatBoundaries() {
+    const CACHE_KEY   = 'beat_boundaries';
+    const CACHE_TTL   = 86400 * 1000; // 24 hours
+
+    // Try IndexedDB cache first
     try {
-      const res = await fetch('/static/data/beat_boundaries.geojson');
+      const cached = await SpatialCache.get(CACHE_KEY);
+      if (cached && cached._ts && (Date.now() - cached._ts) < CACHE_TTL && cached.data && cached.data.features) {
+        this.rawBeatData = cached.data;
+        this.renderBeatBoundariesGeoJSON(cached.data);
+        return; // served from cache — no network fetch needed
+      }
+    } catch (err) {
+      console.warn('Beat boundary cache lookup failed:', err);
+    }
+
+    // Fetch fresh from server
+    try {
+      const res  = await fetch('/static/data/beat_boundaries.geojson');
       const data = await res.json();
       if (data && data.features && data.features.length > 0) {
+        SpatialCache.set(CACHE_KEY, { data, _ts: Date.now() });
         this.rawBeatData = data;
         this.renderBeatBoundariesGeoJSON(data);
       }

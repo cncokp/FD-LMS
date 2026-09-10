@@ -1,45 +1,83 @@
 """
 FD-LMS: FastAPI REST API & Static File Server
 Ultra-fast spatial streaming with GZip compression and in-memory cache.
+Fully Supabase-backed — no local SQLite fallback.
 """
 
 import os
+import threading
 from typing import Optional
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from server import db
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+
+# ---------------------------------------------------------------------------
+# Startup: pre-warm the in-memory CS cache so the first real request is fast
+# ---------------------------------------------------------------------------
+def _prewarm():
+    try:
+        db.get_cs_plots_json_bytes()
+        print("[FD-LMS] CS plot cache pre-warmed ✓")
+    except Exception as e:
+        print(f"[FD-LMS] Pre-warm failed (will load on first request): {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=_prewarm, daemon=True).start()
+    yield
+
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title="Forest Department Land Management System (FD-LMS)",
     description="High-Speed Cadastral Boundary Portal",
-    version="2.1.0"
+    version="2.2.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-
 class CacheControlMiddleware(BaseHTTPMiddleware):
+    """
+    Fine-grained cache headers:
+    - /              → no-cache (HTML must always be re-validated)
+    - /static/js/    → 1-year immutable (cache-busted via ?v= query param)
+    - /static/css/   → 1-year immutable (cache-busted via ?v= query param)
+    - /static/data/  → 24h (beat boundaries GeoJSON, etc.)
+    - /static/*.svg  → 24h (logos)
+    - /api/          → no-store
+    """
     async def dispatch(self, request, call_next):
         response = await call_next(request)
         if request.method == "GET" and response.status_code == 200:
             path = request.url.path
-            if path.startswith("/static/") or path == "/" or path == "/sw.js":
-                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-                response.headers["Pragma"] = "no-cache"
-                response.headers["Expires"] = "0"
-            elif path.startswith("/api/"):
+            if path == "/" or path.endswith(".html"):
                 response.headers["Cache-Control"] = "no-cache"
+            elif path.startswith("/static/js/") or path.startswith("/static/css/"):
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            elif path.startswith("/static/data/"):
+                response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
+            elif path.startswith("/static/") and path.endswith(".svg"):
+                response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
+            elif path.startswith("/api/"):
+                response.headers["Cache-Control"] = "no-store"
         return response
+
 
 app.add_middleware(CacheControlMiddleware)
 
@@ -51,24 +89,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/sw.js")
-def serve_service_worker():
-    sw_path = os.path.join(STATIC_DIR, "sw.js")
-    if os.path.exists(sw_path):
-        return FileResponse(sw_path, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
-    raise HTTPException(status_code=404, detail="Service worker not found")
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "system": "FD-LMS", "version": "2.1.0"}
+    return {"status": "ok", "system": "FD-LMS", "version": "2.2.0"}
+
 
 @app.get("/api/stats")
 def get_stats():
     return db.get_stats()
 
+
 @app.get("/api/mouza-boundaries")
 def get_mouza_boundaries():
     return db.get_mouza_boundaries()
+
 
 @app.get("/api/beats/geojson")
 @app.get("/api/boundaries/beats")
@@ -90,6 +128,7 @@ def get_plots(
     json_bytes = db.get_rs_plots_json_bytes(bbox=bbox, plot_no=plot_no, uid=uid, limit=limit)
     return Response(content=json_bytes, media_type="application/json")
 
+
 @app.get("/api/plots/cs")
 def get_cs_plots(
     bbox: Optional[str] = Query(None, description="minx,miny,maxx,maxy in EPSG:4326"),
@@ -100,14 +139,17 @@ def get_cs_plots(
     json_bytes = db.get_cs_plots_json_bytes(bbox=bbox, plot_no=plot_no, uid=uid, limit=limit)
     return Response(content=json_bytes, media_type="application/json")
 
+
 @app.get("/api/encroachments/geojson")
 def get_encroachments_geojson():
     json_bytes = db.get_encroachment_geojson_bytes()
     return Response(content=json_bytes, media_type="application/json")
 
+
 @app.get("/api/encroachments/summary")
 def get_encroachments_summary():
     return db.get_encroachment_summary()
+
 
 @app.get("/api/plots/cs/{plot_id}")
 def get_cs_plot_dossier(plot_id: int):
@@ -115,6 +157,7 @@ def get_cs_plot_dossier(plot_id: int):
     if not dossier:
         raise HTTPException(status_code=404, detail="CS Plot not found")
     return dossier
+
 
 @app.get("/api/plots/{plot_id}")
 @app.get("/api/plots/rs/{plot_id}")
@@ -124,9 +167,11 @@ def get_plot_dossier(plot_id: int):
         raise HTTPException(status_code=404, detail="RS Plot not found")
     return dossier
 
+
 @app.get("/api/search")
 def search(q: str = Query(..., min_length=1)):
     return db.search_records(query=q)
+
 
 @app.get("/api/export/csv")
 def export_csv():
@@ -137,7 +182,9 @@ def export_csv():
         headers={"Content-Disposition": "attachment; filename=fd_plots_cs.csv"}
     )
 
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
 
 @app.get("/")
 def serve_index():
