@@ -917,9 +917,7 @@ body {
   text-transform: uppercase;
   text-align: center;
   line-height: 1.35;
-  white-space: normal;
-  word-break: break-word;
-  /* max-width set inline per feature proportional to polygon width */
+  white-space: nowrap;
   pointer-events: none;
   user-select: none;
   /* Multi-layer text shadow for contrast on satellite + street basemaps */
