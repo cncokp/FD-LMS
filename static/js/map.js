@@ -3,6 +3,8 @@
  * High-performance vector rendering & robust plot interaction
  */
 
+const _labelFontCache = {};
+
 const PlotLabelLayer = L.Layer.extend({
   initialize(options) {
     L.setOptions(this, options);
@@ -127,8 +129,10 @@ const PlotLabelLayer = L.Layer.extend({
           }
         }
 
-        ctx.font = `800 ${itemFontSize}px "JetBrains Mono", "Plus Jakarta Sans", monospace`;
-        ctx.lineWidth = itemFontSize > 10 ? 3.0 : 2.0;
+        const roundedSize = Math.round(itemFontSize * 2) / 2;
+        const fontStr = _labelFontCache[roundedSize] || (_labelFontCache[roundedSize] = `800 ${roundedSize}px "JetBrains Mono", "Plus Jakarta Sans", monospace`);
+        if (ctx.font !== fontStr) ctx.font = fontStr;
+        ctx.lineWidth = roundedSize > 10 ? 3.0 : 2.0;
 
         ctx.strokeStyle = '#1e1b18';
         ctx.strokeText(item.text, x, y);
@@ -142,7 +146,7 @@ const PlotLabelLayer = L.Layer.extend({
 });
 
 const SpatialCache = {
-  dbName: 'fd_lms_spatial_v8',
+  dbName: 'fd_lms_spatial_v9',
   storeName: 'datasets',
   dbPromise: null,
 
@@ -314,13 +318,13 @@ const MapEngine = {
       maxZoom: 22,
       zoomControl: false,
       attributionControl: false,
-      fadeAnimation: true,
+      fadeAnimation: false,
       zoomAnimation: true,
       zoomAnimationThreshold: 8,
-      zoomSnap: 0.5,
-      zoomDelta: 0.5,
-      wheelPxPerZoomLevel: 120,
-      wheelDebounceTime: 40,
+      zoomSnap: 1,
+      zoomDelta: 1,
+      wheelPxPerZoomLevel: 100,
+      wheelDebounceTime: 50,
       preferCanvas: true
     });
 
@@ -338,8 +342,8 @@ const MapEngine = {
     this.map.getPane('encroachPane').style.zIndex = 450;
     this.map.getPane('encroachPane').style.pointerEvents = 'none';
 
-    // Set canvasRenderer pane explicitly to csPane with generous click tolerance
-    this.canvasRenderer = L.canvas({ padding: 0.5, tolerance: 10, pane: 'csPane' });
+    // Set canvasRenderer pane to csPane with 1.2 padding buffer to keep 3.4x viewport in canvas for zero-lag pan
+    this.canvasRenderer = L.canvas({ padding: 1.2, tolerance: 10, pane: 'csPane' });
     this.encroachRenderer = L.svg({ pane: 'encroachPane' });
 
     this.map.createPane('hoverPane');
@@ -406,11 +410,14 @@ const MapEngine = {
     let _lastPrefetchId = null;
 
     this.map.on('mousemove', (e) => {
+      if (this._isDragging || (this.map && this.map._animatingZoom)) return;
+
       // 1. Dynamic Hover Cursor & Slight Plot Highlight
       if (!_hoverThrottled) {
         _hoverThrottled = true;
         requestAnimationFrame(() => {
           _hoverThrottled = false;
+          if (this._isDragging || (this.map && this.map._animatingZoom)) return;
           const container = this.map.getContainer();
           let isOverPlot = false;
           let hoveredFeature = null;
@@ -466,20 +473,34 @@ const MapEngine = {
     });
 
     this.map.on('dragstart', () => {
+      this._isDragging = true;
       this.map.getContainer().classList.remove('map-hover-plot');
       this.clearHoverPlot();
+    });
+
+    this.map.on('dragend', () => {
+      this._isDragging = false;
     });
 
     this.map.on('zoomstart', () => {
       this.clearHoverPlot();
     });
 
+    // Stage 0: Immediately set national park viewport so user never sees empty/ocean canvas
+    this.defaultParkBounds = [[24.015, 90.380], [24.108, 90.436]];
+    this.map.fitBounds(this.defaultParkBounds, { padding: [30, 30] });
+
+    // Stage 1: Load Beat Boundaries + Encroachments immediately (<100ms)
     await Promise.all([
-      this.loadCSPlots(),
-      this.loadEncroachments(),
       this.loadBeatBoundaries(),
-      loadBulkDossier()          // bulk parcel+encroachment → IndexedDB → _bulkDossierMap
+      this.loadEncroachments()
     ]);
+
+    // Stage 2: Background hydrate bulk dossier for instant 0ms lookups
+    loadBulkDossier();
+
+    // Stage 3: Load Cadastral Parcels with non-blocking floating GIS HUD pill
+    await this.loadCSPlots();
     this.hideLoading();
   },
 
@@ -504,8 +525,8 @@ const MapEngine = {
       maxZoom: 22,
       maxNativeZoom: 19,
       crossOrigin: true,
-      keepBuffer: 3,
-      updateWhenIdle: true,
+      keepBuffer: 8,
+      updateWhenIdle: false,
       updateWhenZooming: false
     };
 
@@ -534,7 +555,7 @@ const MapEngine = {
   },
 
   async loadCSPlots() {
-    const CACHE_KEY = 'cs_plots_v3';
+    const CACHE_KEY = 'cs_plots_v4';
     const CACHE_TTL = 86400 * 1000; // 24 hours
 
     let cachedData = null;
@@ -561,7 +582,7 @@ const MapEngine = {
 
     // Only show loading if we didn't have any cached data to display
     if (!cachedData) {
-      this.showLoading('Loading 11,300+ Cadastral Parcels...');
+      this.showLoading('Streaming Cadastral Parcels...');
     }
 
     try {
@@ -574,16 +595,8 @@ const MapEngine = {
 
         // If cold visit (first time without cache):
         if (!cachedData) {
-          this.showLoading('Rendering Cadastral Parcels...');
-          await new Promise(r => setTimeout(r, 20));
           this.renderCSPlotsGeoJSON(this.rawCSData);
           this.hideLoading();
-
-          // Set initial bounds only on initial cold visit so user's map position is never jerked later
-          if (csData.bounds) {
-            const [minx, miny, maxx, maxy] = csData.bounds;
-            this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [30, 30] });
-          }
         } else {
           // Stale-while-revalidate background update:
           // Silently refresh layer without showing loading screen and WITHOUT resetting user's zoom/pan!
@@ -605,6 +618,10 @@ const MapEngine = {
     for (let i = 0; i < features.length; i++) {
       const f = features[i];
       if (f._bbox) continue;
+      if (f.bbox && f.bbox.length === 4) {
+        f._bbox = f.bbox;
+        continue;
+      }
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       const expand = (ring) => {
         if (!ring) return;

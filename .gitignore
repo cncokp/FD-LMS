@@ -30,3 +30,4 @@ DB/
 .DS_Store
 Thumbs.db
 .vercel
+*.png

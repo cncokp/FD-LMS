@@ -22,11 +22,27 @@ SUPABASE_URL    = os.getenv("SUPABASE_URL", "https://tbffjjlkmzswcmwdkulh.supaba
 SUPABASE_KEY    = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZmZqamxrbXpzd2Ntd2RrdWxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMTgwODMsImV4cCI6MjEwNDU5NDA4M30.8QTxmJNbuA91yfNyztrZqq4kvMniN0t9j6C6TaiQyYg").strip()
 
 import time
+import gzip
+import hashlib
 
-# In-memory cached JSON bytes (survives the process lifetime on non-serverless hosts)
+CACHE_DIR = os.path.join(BASE_DIR, "data", "cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+# In-memory cached JSON bytes and pre-compressed GZip bytes with ETags
 _cs_cache_bytes: Optional[bytes] = None
+_cs_gzip_bytes: Optional[bytes] = None
+_cs_etag: Optional[str] = None
+
 _encroach_cache_bytes: Optional[bytes] = None
+_encroach_gzip_bytes: Optional[bytes] = None
+_encroach_etag: Optional[str] = None
+
 _bulk_dossier_cache_bytes: Optional[bytes] = None
+_bulk_dossier_gzip_bytes: Optional[bytes] = None
+_bulk_dossier_etag: Optional[str] = None
+
+def _calc_etag(data: bytes) -> str:
+    return f'"{hashlib.md5(data).hexdigest()}"'
 
 # Beat name corrections for specific plots:
 # Araishprashad (JL 18): Plots 621, 622, 623 -> Baupara Beat; Plots 321, 979 -> Park Beat
@@ -37,6 +53,51 @@ BEAT_NAME_OVERRIDES: Dict[str, str] = {
     "18321": "Park Beat",  # Araishprashad CS Plot 321 -> Park Beat
     "18979": "Park Beat",  # Araishprashad CS Plot 979 -> Park Beat
 }
+
+def init_disk_cache():
+    """Pre-loads spatial datasets and bulk dossier directly from disk snapshots in <10ms."""
+    global _cs_cache_bytes, _cs_gzip_bytes, _cs_etag
+    global _bulk_dossier_cache_bytes, _bulk_dossier_gzip_bytes, _bulk_dossier_etag
+    global _encroach_cache_bytes, _encroach_gzip_bytes, _encroach_etag
+
+    # 1. CS Plots
+    cs_path = os.path.join(CACHE_DIR, "cs_plots.geojson.gz")
+    if os.path.exists(cs_path) and _cs_cache_bytes is None:
+        try:
+            with open(cs_path, "rb") as f:
+                _cs_gzip_bytes = f.read()
+            _cs_cache_bytes = gzip.decompress(_cs_gzip_bytes)
+            _cs_etag = _calc_etag(_cs_gzip_bytes)
+            print(f"[FD-LMS] CS plots loaded from disk snapshot: {len(_cs_cache_bytes):,} bytes [OK]")
+        except Exception as e:
+            print(f"[FD-LMS] CS plots disk cache load error: {e}")
+
+    # 2. Bulk Dossier
+    bulk_path = os.path.join(CACHE_DIR, "bulk_dossier.json.gz")
+    if os.path.exists(bulk_path) and _bulk_dossier_cache_bytes is None:
+        try:
+            with open(bulk_path, "rb") as f:
+                _bulk_dossier_gzip_bytes = f.read()
+            _bulk_dossier_cache_bytes = gzip.decompress(_bulk_dossier_gzip_bytes)
+            _bulk_dossier_etag = _calc_etag(_bulk_dossier_gzip_bytes)
+            print(f"[FD-LMS] Bulk dossier loaded from disk snapshot: {len(_bulk_dossier_cache_bytes):,} bytes [OK]")
+        except Exception as e:
+            print(f"[FD-LMS] Bulk dossier disk cache load error: {e}")
+
+    # 3. Encroachments
+    encroach_path = os.path.join(CACHE_DIR, "encroachments.geojson.gz")
+    if os.path.exists(encroach_path) and _encroach_cache_bytes is None:
+        try:
+            with open(encroach_path, "rb") as f:
+                _encroach_gzip_bytes = f.read()
+            _encroach_cache_bytes = gzip.decompress(_encroach_gzip_bytes)
+            _encroach_etag = _calc_etag(_encroach_gzip_bytes)
+            print(f"[FD-LMS] Encroachments loaded from disk snapshot: {len(_encroach_cache_bytes):,} bytes [OK]")
+        except Exception as e:
+            print(f"[FD-LMS] Encroachments disk cache load error: {e}")
+
+# Pre-load immediately on import
+init_disk_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +215,7 @@ def _assemble_features_json(rows: List[Dict[str, Any]]) -> bytes:
 
         feat_strs.append(
             f'{{"type":"Feature","id":{pid},'
+            f'"bbox":[{round(rx1,6)},{round(ry1,6)},{round(rx2,6)},{round(ry2,6)}],'
             f'"properties":{{"id":{pid},"uid":{uid_val},"plot_no":{pno},"mouza":{mouza},"jl_no":{jl},"beat_name":{beat},'
             f'"area_acre":{area},"label_lat":{llat},"label_lng":{llng},"label_radius":{lrad}}},'
             f'"geometry":{geom_str}}}'
@@ -162,6 +224,34 @@ def _assemble_features_json(rows: List[Dict[str, Any]]) -> bytes:
     bounds_str = f'[{round(minx_agg,5)},{round(miny_agg,5)},{round(maxx_agg,5)},{round(maxy_agg,5)}]'
     full_json  = f'{{"type":"FeatureCollection","count":{len(feat_strs)},"bounds":{bounds_str},"features":[{",".join(feat_strs)}]}}'
     return full_json.encode("utf-8")
+
+
+def get_cs_plots_gzip_and_etag() -> Tuple[bytes, str]:
+    global _cs_gzip_bytes, _cs_etag
+    if _cs_gzip_bytes is not None and _cs_etag is not None:
+        return _cs_gzip_bytes, _cs_etag
+    raw = get_cs_plots_json_bytes()
+    _cs_gzip_bytes = gzip.compress(raw, compresslevel=6)
+    _cs_etag = _calc_etag(_cs_gzip_bytes)
+    return _cs_gzip_bytes, _cs_etag
+
+def get_bulk_dossier_gzip_and_etag() -> Tuple[bytes, str]:
+    global _bulk_dossier_gzip_bytes, _bulk_dossier_etag
+    if _bulk_dossier_gzip_bytes is not None and _bulk_dossier_etag is not None:
+        return _bulk_dossier_gzip_bytes, _bulk_dossier_etag
+    raw = get_bulk_dossier_json_bytes()
+    _bulk_dossier_gzip_bytes = gzip.compress(raw, compresslevel=6)
+    _bulk_dossier_etag = _calc_etag(_bulk_dossier_gzip_bytes)
+    return _bulk_dossier_gzip_bytes, _bulk_dossier_etag
+
+def get_encroachment_gzip_and_etag() -> Tuple[bytes, str]:
+    global _encroach_gzip_bytes, _encroach_etag
+    if _encroach_gzip_bytes is not None and _encroach_etag is not None:
+        return _encroach_gzip_bytes, _encroach_etag
+    raw = get_encroachment_geojson_bytes()
+    _encroach_gzip_bytes = gzip.compress(raw, compresslevel=6)
+    _encroach_etag = _calc_etag(_encroach_gzip_bytes)
+    return _encroach_gzip_bytes, _encroach_etag
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +290,7 @@ def _get_cs_plots_supabase_api(bbox, plot_no, uid, limit, is_unfiltered) -> byte
     _FIELDS = "id,uid,plot_no,mouza,jl_no,area_acre,beat_name,label_lat,label_lng,label_radius,minx,maxx,miny,maxy,geojson"
 
     if plot_no or uid:
-        q = f"plot_no=eq.{urllib.parse.quote(plot_no)}" if plot_no else f"uid=eq.{urllib.parse.quote(uid)}"
+        q = f"plot_no=eq.{urllib.parse.quote(str(plot_no))}" if plot_no else f"uid=eq.{urllib.parse.quote(str(uid))}"
         resp = _supabase_request(f"cs_plots?{q}&select={_FIELDS}")
         rows = json.loads(resp.read().decode("utf-8"))
         return _assemble_features_json(rows)

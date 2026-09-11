@@ -9,7 +9,7 @@ import threading
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -27,15 +27,10 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 # ---------------------------------------------------------------------------
 def _prewarm():
     try:
-        db.get_cs_plots_json_bytes()
-        print("[FD-LMS] CS plot cache pre-warmed ✓")
+        db.init_disk_cache()
+        print("[FD-LMS] All disk caches pre-warmed [OK]")
     except Exception as e:
-        print(f"[FD-LMS] CS pre-warm failed: {e}")
-    try:
-        db.get_bulk_dossier_json_bytes()
-        print("[FD-LMS] Bulk dossier cache pre-warmed ✓")
-    except Exception as e:
-        print(f"[FD-LMS] Bulk dossier pre-warm failed: {e}")
+        print(f"[FD-LMS] Pre-warm failed: {e}")
 
 
 @asynccontextmanager
@@ -80,7 +75,8 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             elif path.startswith("/static/") and path.endswith(".svg"):
                 response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
             elif path.startswith("/api/"):
-                response.headers["Cache-Control"] = "no-store"
+                if "Cache-Control" not in response.headers:
+                    response.headers["Cache-Control"] = "no-store"
         return response
 
 
@@ -136,19 +132,43 @@ def get_plots(
 
 @app.get("/api/plots/cs")
 def get_cs_plots(
+    request: Request,
     bbox: Optional[str] = Query(None, description="minx,miny,maxx,maxy in EPSG:4326"),
     plot_no: Optional[str] = Query(None),
     uid: Optional[str] = Query(None),
     limit: int = Query(35000, le=50000)
 ):
+    if not bbox and not plot_no and not uid:
+        gzip_bytes, etag = db.get_cs_plots_gzip_and_etag()
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"})
+        return Response(
+            content=gzip_bytes,
+            media_type="application/json",
+            headers={
+                "Content-Encoding": "gzip",
+                "ETag": etag,
+                "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"
+            }
+        )
     json_bytes = db.get_cs_plots_json_bytes(bbox=bbox, plot_no=plot_no, uid=uid, limit=limit)
     return Response(content=json_bytes, media_type="application/json")
 
 
 @app.get("/api/encroachments/geojson")
-def get_encroachments_geojson():
-    json_bytes = db.get_encroachment_geojson_bytes()
-    return Response(content=json_bytes, media_type="application/json")
+def get_encroachments_geojson(request: Request):
+    gzip_bytes, etag = db.get_encroachment_gzip_and_etag()
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"})
+    return Response(
+        content=gzip_bytes,
+        media_type="application/json",
+        headers={
+            "Content-Encoding": "gzip",
+            "ETag": etag,
+            "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"
+        }
+    )
 
 
 @app.get("/api/encroachments/summary")
@@ -165,11 +185,21 @@ def get_cs_plot_dossier(plot_id: int):
 
 
 @app.get("/api/dossier/bulk")
-def get_bulk_dossier():
+def get_bulk_dossier(request: Request):
     """Returns all parcel_info + encroachment data keyed by uid in one payload.
     Client caches in IndexedDB — enables instant zero-API-call dossier rendering."""
-    json_bytes = db.get_bulk_dossier_json_bytes()
-    return Response(content=json_bytes, media_type="application/json")
+    gzip_bytes, etag = db.get_bulk_dossier_gzip_and_etag()
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"})
+    return Response(
+        content=gzip_bytes,
+        media_type="application/json",
+        headers={
+            "Content-Encoding": "gzip",
+            "ETag": etag,
+            "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"
+        }
+    )
 
 
 @app.get("/api/plots/{plot_id}")

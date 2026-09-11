@@ -23,7 +23,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_19" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260911_23" />
 
 </head>
 <body>
@@ -48,26 +48,10 @@
       <!-- Interactive Leaflet Map -->
       <div id="map"></div>
 
-      <!-- Dynamic Map Loading Indicator -->
-      <div class="map-loading-indicator" id="mapLoadingIndicator">
-        <div class="loading-visual">
-          <div class="radar-pulse"></div>
-          <div class="spinner-orbit">
-            <div class="orbit-dot"></div>
-          </div>
-          <div class="loading-icon-core">
-            <i class="fa-solid fa-layer-group"></i>
-          </div>
-        </div>
-        <div class="loading-text-content">
-          <div class="loading-title">Forest Land Management System</div>
-          <div class="loading-status">
-            <span id="loadingStatusText">Loading Cadastral Parcels...</span>
-          </div>
-        </div>
-        <div class="loading-progress-track">
-          <div class="loading-progress-shimmer"></div>
-        </div>
+      <!-- Floating GIS HUD Progress Pill -->
+      <div class="map-hud-pill hidden" id="mapLoadingIndicator">
+        <div class="hud-pill-dot"></div>
+        <span class="hud-pill-text" id="loadingStatusText">Streaming Cadastral Parcels...</span>
       </div>
 
       <!-- Bottom-Left Map Controls: Basemap Switcher above Zoom Controls -->
@@ -325,8 +309,8 @@
   </script>
   <!-- Leaflet & App Scripts — defer keeps HTML parsing non-blocking; order is preserved -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-  <script src="/static/js/dossier.js?v=20260911_21" defer></script>
-  <script src="/static/js/map.js?v=20260911_21" defer></script>
-  <script src="/static/js/app.js?v=20260911_21" defer></script>
+  <script src="/static/js/dossier.js?v=20260911_23" defer></script>
+  <script src="/static/js/map.js?v=20260911_23" defer></script>
+  <script src="/static/js/app.js?v=20260911_23" defer></script>
 </body>
 </html>
