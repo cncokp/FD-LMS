@@ -1872,3 +1872,9 @@ input:checked + .slider:before {
 .leaflet-tile-container {
   will-change: transform;
 }
+
+.leaflet-plot-label-canvas {
+  will-change: transform;
+  transform-origin: 0 0;
+  pointer-events: none;
+}

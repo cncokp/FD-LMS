@@ -14,9 +14,10 @@ const PlotLabelLayer = L.Layer.extend({
   onAdd(map) {
     this._map = map;
     if (!this._canvas) {
-      this._canvas = L.DomUtil.create('canvas', 'leaflet-plot-label-canvas');
+      this._canvas = L.DomUtil.create('canvas', 'leaflet-plot-label-canvas leaflet-zoom-animated');
       this._canvas.style.position = 'absolute';
       this._canvas.style.pointerEvents = 'none';
+      this._canvas.style.transformOrigin = '0 0';
       this._canvas.style.willChange = 'transform';
     }
     const pane = map.getPane('labelPane') || map.getPanes().overlayPane;
@@ -32,8 +33,29 @@ const PlotLabelLayer = L.Layer.extend({
       }
     };
 
+    this._onAnimZoom = (e) => {
+      this._updateTransform(e.center, e.zoom);
+    };
+
+    this._onZoomStart = () => {
+      if (this._rafId) {
+        cancelAnimationFrame(this._rafId);
+        this._rafId = null;
+      }
+    };
+
+    this._onZoomEnd = () => {
+      if (this._rafId) {
+        cancelAnimationFrame(this._rafId);
+        this._rafId = null;
+      }
+      this._update();
+    };
+
+    map.on('zoomanim', this._onAnimZoom, this);
+    map.on('zoomstart', this._onZoomStart, this);
+    map.on('zoomend', this._onZoomEnd, this);
     map.on('moveend', this._onMove, this);
-    map.on('zoomend', this._onMove, this);
     map.on('resize', this._resize, this);
     this._resize();
     this._update();
@@ -47,8 +69,10 @@ const PlotLabelLayer = L.Layer.extend({
     if (this._canvas && this._canvas.parentNode) {
       this._canvas.parentNode.removeChild(this._canvas);
     }
+    map.off('zoomanim', this._onAnimZoom, this);
+    map.off('zoomstart', this._onZoomStart, this);
+    map.off('zoomend', this._onZoomEnd, this);
     map.off('moveend', this._onMove, this);
-    map.off('zoomend', this._onMove, this);
     map.off('resize', this._resize, this);
   },
 
@@ -73,14 +97,32 @@ const PlotLabelLayer = L.Layer.extend({
     this._update();
   },
 
+  _updateTransform(center, zoom) {
+    if (!this._map || !this._canvas || !this._center || this._zoom == null) return;
+    const scale = this._map.getZoomScale(zoom, this._zoom);
+    const viewHalf = this._map.getSize().multiplyBy(0.5);
+    const currentCenterPoint = this._map.project(this._center, zoom);
+    const topLeftOffset = viewHalf.multiplyBy(-scale).add(currentCenterPoint)
+      .subtract(this._map._getNewPixelOrigin(center, zoom));
+
+    L.DomUtil.setTransform(this._canvas, topLeftOffset, scale);
+  },
+
   _update() {
     if (!this._map || !this._canvas) return;
     if (this._map._animatingZoom) return; // Never block zoom animation frames!
+
+    this._center = this._map.getCenter();
+    this._zoom = this._map.getZoom();
+
+    const origin = this._map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(this._canvas, origin);
+
     const ctx = this._canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
 
-    const zoom = this._map.getZoom();
+    const zoom = this._zoom;
     if (zoom < 15 || this._labels.length === 0) return;
 
     const bounds = this._map.getBounds();
@@ -88,9 +130,6 @@ const PlotLabelLayer = L.Layer.extend({
     const north = bounds.getNorth();
     const west = bounds.getWest();
     const east = bounds.getEast();
-
-    const origin = this._map.containerPointToLayerPoint([0, 0]);
-    L.DomUtil.setPosition(this._canvas, origin);
 
     ctx.save();
     ctx.scale(dpr, dpr);
