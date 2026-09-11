@@ -324,6 +324,29 @@ const MapEngine = {
       if (typeof Dossier !== 'undefined') Dossier.close();
     });
 
+    // Hover prefetch: silently fetch dossier data while the user moves over plots.
+    // By click-time the data is already in _dossierCache → renders instantly.
+    let _prefetchTimer = null;
+    let _lastPrefetchId = null;
+    this.map.on('mousemove', (e) => {
+      if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return;
+      if (_prefetchTimer) return; // throttle: one lookup per 100ms
+      _prefetchTimer = setTimeout(() => {
+        _prefetchTimer = null;
+        const feat = this.findPlotAtLatLng(e.latlng);
+        if (!feat) return;
+        const plotId = feat.properties && feat.properties.id;
+        if (!plotId || plotId === _lastPrefetchId) return;
+        if (_dossierCacheGet(plotId)) return; // already cached
+        _lastPrefetchId = plotId;
+        // Silent background fetch — no UI change, just populate the cache
+        fetch(`/api/plots/cs/${plotId}`)
+          .then(r => r.json())
+          .then(data => { if (data && data.plot) _dossierCacheSet(plotId, data); })
+          .catch(() => {});
+      }, 100);
+    });
+
     await Promise.all([
       this.loadCSPlots(),
       this.loadEncroachments(),
