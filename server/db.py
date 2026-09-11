@@ -21,9 +21,12 @@ SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "").strip()
 SUPABASE_URL    = os.getenv("SUPABASE_URL", "https://tbffjjlkmzswcmwdkulh.supabase.co").strip()
 SUPABASE_KEY    = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZmZqamxrbXpzd2Ntd2RrdWxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMTgwODMsImV4cCI6MjEwNDU5NDA4M30.8QTxmJNbuA91yfNyztrZqq4kvMniN0t9j6C6TaiQyYg").strip()
 
+import time
+
 # In-memory cached JSON bytes (survives the process lifetime on non-serverless hosts)
 _cs_cache_bytes: Optional[bytes] = None
 _encroach_cache_bytes: Optional[bytes] = None
+_bulk_dossier_cache_bytes: Optional[bytes] = None
 
 
 # ---------------------------------------------------------------------------
@@ -489,8 +492,175 @@ def get_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Encroachments
+# Bulk Dossier — all parcel_info + encroachment_info in one payload
+# Client stores this in IndexedDB; assembly happens entirely client-side.
 # ---------------------------------------------------------------------------
+def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> bytes:
+    global _bulk_dossier_cache_bytes
+
+    # Group parcel_info rows by cs_uid
+    parcel_by_uid: Dict[str, List[Dict]] = {}
+    for r in parcel_rows:
+        uid = str(r.get("cs_uid") or "")
+        if uid:
+            parcel_by_uid.setdefault(uid, []).append(r)
+
+    # Group encroachment rows by uid
+    encroach_by_uid: Dict[str, List[Dict]] = {}
+    for r in encroach_rows:
+        uid = str(r.get("uid") or "")
+        if uid:
+            encroach_by_uid.setdefault(uid, []).append(r)
+
+    # Collect all uids from both tables
+    all_uids = set(parcel_by_uid.keys()) | set(encroach_by_uid.keys())
+
+    by_uid: Dict[str, Any] = {}
+    for uid in all_uids:
+        precs = parcel_by_uid.get(uid, [])
+        erecs = encroach_by_uid.get(uid, [])
+
+        # Build encroachment payload
+        enc_list = []
+        for er in erecs:
+            enc_list.append({
+                "encroacher_name":      er.get("encroacher_name"),
+                "cs_plot_no":           er.get("cs_plot_no"),
+                "rs_plot_no":           er.get("rs_plot_no"),
+                "rs_khatian":           er.get("rs_khatian"),
+                "sec_20":               er.get("sec_20"),
+                "sec_6":                er.get("sec_6"),
+                "encroached_area_acre": er.get("encroached_area_acre"),
+                "structure_type":       er.get("structure_type"),
+                "action_taken":         er.get("action_taken"),
+            })
+        total_enc = round(
+            sum(float(e["encroached_area_acre"]) for e in enc_list if e.get("encroached_area_acre") is not None), 4
+        ) if enc_list else 0.0
+        encroachment = {
+            "has_encroachment":      bool(enc_list),
+            "count":                 len(enc_list),
+            "total_encroached_acre": total_enc,
+            "records":               enc_list,
+        }
+
+        if not precs:
+            by_uid[uid] = {"has_record": False, "encroachment": encroachment}
+            continue
+
+        first          = precs[0]
+        fd_areas       = [r["area_fd"]     for r in precs if r.get("area_fd")     is not None]
+        others_areas   = [r["area_others"] for r in precs if r.get("area_others") is not None]
+        total_area_fd  = round(sum(fd_areas),     4) if fd_areas     else None
+        total_area_oth = round(sum(others_areas), 4) if others_areas else None
+        cs_land_acre   = next((r["cs_land_acre"] for r in precs if r.get("cs_land_acre") is not None), None)
+        rs_totals      = [r["total_area"] for r in precs if r.get("total_area") is not None]
+        if cs_land_acre is not None:
+            recorded_total = cs_land_acre
+        elif rs_totals:
+            recorded_total = round(sum(rs_totals), 4)
+        elif total_area_fd is not None or total_area_oth is not None:
+            recorded_total = round((total_area_fd or 0) + (total_area_oth or 0), 4)
+        else:
+            recorded_total = None
+
+        legal_statuses = list(dict.fromkeys(r.get("legal_status") for r in precs if r.get("legal_status")))
+        khatians       = list(dict.fromkeys(r.get("khatian_no")   for r in precs if r.get("khatian_no")))
+        remarks_list   = list(dict.fromkeys(r.get("remarks")       for r in precs if r.get("remarks")))
+
+        linked_rs = []
+        for r in precs:
+            if r.get("rs_plot_no"):
+                linked_rs.append({
+                    "rs_plot_no":  r.get("rs_plot_no"),  "rs_jl":      r.get("rs_jl"),
+                    "legal_status": r.get("legal_status"), "khatian_no": r.get("khatian_no"),
+                    "area_fd":     r.get("area_fd"),      "area_others": r.get("area_others"),
+                    "total_area":  r.get("total_area"),   "remarks":     r.get("remarks"),
+                })
+
+        by_uid[uid] = {
+            "has_record":       True,
+            "cs_plot_no":       first.get("cs_plot_no"),
+            "mouza":            first.get("mouza"),
+            "cs_jl":            first.get("cs_jl"),
+            "beat_name":        first.get("beat_name"),
+            "range":            first.get("range"),
+            "total_area":       recorded_total,
+            "total_area_fd":    total_area_fd,
+            "total_area_others": total_area_oth,
+            "legal_status":     ", ".join(legal_statuses) if legal_statuses else None,
+            "khatian_no":       ", ".join(khatians)       if khatians       else None,
+            "remarks":          "; ".join(remarks_list)   if remarks_list   else None,
+            "linked_rs_plots":  linked_rs,
+            "encroachment":     encroachment,
+        }
+
+    payload = json.dumps({"generated_at": int(time.time()), "by_uid": by_uid},
+                         separators=(",", ":")).encode("utf-8")
+    _bulk_dossier_cache_bytes = payload
+    return payload
+
+
+def get_bulk_dossier_json_bytes() -> bytes:
+    global _bulk_dossier_cache_bytes
+    if _bulk_dossier_cache_bytes:
+        return _bulk_dossier_cache_bytes
+
+    PARCEL_COLS   = "cs_uid,rs_uid,range,beat_name,mouza,cs_jl,rs_jl,cs_plot_no,rs_plot_no,cs_land_acre,total_area,area_fd,area_others,khatian_no,legal_status,remarks"
+    ENCROACH_COLS = "uid,encroacher_name,cs_plot_no,rs_plot_no,rs_khatian,sec_20,sec_6,encroached_area_acre,structure_type,action_taken"
+
+    if is_supabase_pg_enabled():
+        try:
+            def _fetch_parcel_pg():
+                with get_pg_connection() as c:
+                    with c.cursor() as cur:
+                        cur.execute(f"SELECT {PARCEL_COLS} FROM parcel_info ORDER BY cs_uid, id")
+                        return [dict(r) for r in cur.fetchall()]
+
+            def _fetch_encroach_pg():
+                with get_pg_connection() as c:
+                    with c.cursor() as cur:
+                        cur.execute(f"SELECT {ENCROACH_COLS} FROM encroachment_info ORDER BY uid, id")
+                        return [dict(r) for r in cur.fetchall()]
+
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                fut_p = ex.submit(_fetch_parcel_pg)
+                fut_e = ex.submit(_fetch_encroach_pg)
+                parcel_rows   = fut_p.result()
+                encroach_rows = fut_e.result()
+
+            return _build_bulk_payload(parcel_rows, encroach_rows)
+        except Exception as e:
+            print(f"Bulk dossier PG error ({e}), trying Cloud API...")
+
+    if is_supabase_cloud_enabled():
+        try:
+            def _fetch_parcel_api():
+                r = _supabase_request(
+                    f"parcel_info?select={PARCEL_COLS}&order=cs_uid,id&limit=20000"
+                )
+                return json.loads(r.read().decode("utf-8"))
+
+            def _fetch_encroach_api():
+                r = _supabase_request(
+                    f"encroachment_info?select={ENCROACH_COLS}&order=uid,id&limit=10000"
+                )
+                return json.loads(r.read().decode("utf-8"))
+
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                fut_p = ex.submit(_fetch_parcel_api)
+                fut_e = ex.submit(_fetch_encroach_api)
+                parcel_rows   = fut_p.result()
+                encroach_rows = fut_e.result()
+
+            return _build_bulk_payload(parcel_rows, encroach_rows)
+        except Exception as e:
+            print(f"Bulk dossier Cloud API error: {e}")
+
+    return json.dumps({"generated_at": int(time.time()), "by_uid": {}},
+                      separators=(",", ":")).encode("utf-8")
+
+
 def get_encroachment_summary() -> Dict[str, Any]:
     if is_supabase_pg_enabled():
         try:

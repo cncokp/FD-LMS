@@ -199,6 +199,53 @@ function _dossierCacheSet(plotId, data) {
   _dossierCache.set(plotId, data);
 }
 
+// ---------------------------------------------------------------------------
+// Bulk Dossier Map — keyed by uid (string), populated from /api/dossier/bulk
+// Enables instant full-dossier render from memory, zero API calls per click.
+// ---------------------------------------------------------------------------
+let _bulkDossierMap = null; // null = not yet loaded; {} = loaded but empty
+
+const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier';
+const BULK_DOSSIER_TTL       = 86400 * 1000; // 24 hours
+
+async function _storeBulkInMemory(payload) {
+  if (!payload || !payload.by_uid) return;
+  _bulkDossierMap = payload.by_uid; // plain object — O(1) uid lookup
+}
+
+async function _fetchAndCacheBulk() {
+  try {
+    const res  = await fetch('/api/dossier/bulk');
+    const data = await res.json();
+    if (data && data.by_uid) {
+      await SpatialCache.set(BULK_DOSSIER_CACHE_KEY, { data, _ts: Date.now() });
+      await _storeBulkInMemory(data);
+    }
+  } catch (e) {
+    console.warn('Bulk dossier fetch failed:', e);
+  }
+}
+
+async function loadBulkDossier() {
+  // 1. Try IndexedDB — if fresh (<24h) render immediately and refresh in background
+  try {
+    const cached = await SpatialCache.get(BULK_DOSSIER_CACHE_KEY);
+    if (cached && cached._ts && cached.data && cached.data.by_uid) {
+      await _storeBulkInMemory(cached.data); // load into memory instantly
+      const age = Date.now() - cached._ts;
+      if (age < BULK_DOSSIER_TTL) {
+        // Stale-while-revalidate: serve instantly, refresh silently in background
+        _fetchAndCacheBulk();
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn('Bulk dossier IndexedDB lookup failed:', e);
+  }
+  // 2. Cache miss or expired → fetch fresh (blocks until done so first clicks are ready)
+  await _fetchAndCacheBulk();
+}
+
 const MapEngine = {
   map: null,
   currentBasemap: 'satellite',
@@ -330,7 +377,8 @@ const MapEngine = {
     let _lastPrefetchId = null;
     this.map.on('mousemove', (e) => {
       if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return;
-      if (_prefetchTimer) return; // throttle: one lookup per 100ms
+      if (_bulkDossierMap) return; // bulk data loaded — no prefetch needed
+      if (_prefetchTimer) return;
       _prefetchTimer = setTimeout(() => {
         _prefetchTimer = null;
         const feat = this.findPlotAtLatLng(e.latlng);
@@ -350,7 +398,8 @@ const MapEngine = {
     await Promise.all([
       this.loadCSPlots(),
       this.loadEncroachments(),
-      this.loadBeatBoundaries()
+      this.loadBeatBoundaries(),
+      loadBulkDossier()          // bulk parcel+encroachment → IndexedDB → _bulkDossierMap
     ]);
   },
 
@@ -1192,31 +1241,43 @@ const MapEngine = {
 
       const bounds = this.getFeatureBounds(feature);
       const plotId = p.id;
-      
-      Dossier.renderCSPlot({
-        plot: {
-          id: p.id,
-          uid: p.uid,
-          plot_no: p.plot_no,
-          mouza: p.mouza || 'N/A',
-          jl_no: p.jl_no || 'N/A',
-          area_acre: initialArea,
-          beat_name: p.beat_name,
-          type: 'CS Cadastral Survey'
-        },
-        bounds: bounds,
-        loadingParcelInfo: true
-      });
+      const uid    = p.uid ? String(p.uid) : null;
 
-      // 3. Hydrate with full parcel detail — check LRU cache first, fetch if missing
+      // 3. Assemble full dossier — three-tier priority:
+      //    a) _bulkDossierMap (in-memory from IndexedDB bulk cache) → instant, zero network
+      //    b) _dossierCache   (per-plot LRU, populated by hover-prefetch) → instant
+      //    c) individual API  (fallback for very first visit before bulk loads)
+
+      const plotBase = {
+        id: p.id, uid: p.uid, plot_no: p.plot_no,
+        mouza: p.mouza || 'N/A', jl_no: p.jl_no || 'N/A',
+        area_acre: initialArea, beat_name: p.beat_name,
+        type: 'CS Cadastral Survey'
+      };
+
+      // Priority A — bulk map
+      if (uid && _bulkDossierMap && _bulkDossierMap[uid]) {
+        const bulk = _bulkDossierMap[uid];
+        Dossier.renderCSPlot({
+          plot: plotBase, bounds,
+          parcel_info: { cs_uid: uid, ...bulk },
+          encroachment: bulk.encroachment || { has_encroachment: false, count: 0, total_encroached_acre: 0, records: [] }
+        });
+        return;
+      }
+
+      // Optimistic render while fetching
+      Dossier.renderCSPlot({ plot: plotBase, bounds, loadingParcelInfo: true });
+
       if (plotId) {
+        // Priority B — per-plot LRU cache (hover prefetch may have filled this)
         const cached = _dossierCacheGet(plotId);
         if (cached) {
-          // Instant re-render from memory — zero network latency
           if (typeof Dossier !== 'undefined' && Dossier.currentPlotId === plotId) {
             Dossier.renderCSPlot(cached);
           }
         } else {
+          // Priority C — individual API fetch (only on very first visit before bulk loads)
           fetch(`/api/plots/cs/${plotId}`)
             .then(r => r.json())
             .then(data => {

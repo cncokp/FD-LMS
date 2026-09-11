@@ -30,7 +30,12 @@ def _prewarm():
         db.get_cs_plots_json_bytes()
         print("[FD-LMS] CS plot cache pre-warmed ✓")
     except Exception as e:
-        print(f"[FD-LMS] Pre-warm failed (will load on first request): {e}")
+        print(f"[FD-LMS] CS pre-warm failed: {e}")
+    try:
+        db.get_bulk_dossier_json_bytes()
+        print("[FD-LMS] Bulk dossier cache pre-warmed ✓")
+    except Exception as e:
+        print(f"[FD-LMS] Bulk dossier pre-warm failed: {e}")
 
 
 @asynccontextmanager
@@ -157,6 +162,14 @@ def get_cs_plot_dossier(plot_id: int):
     if not dossier:
         raise HTTPException(status_code=404, detail="CS Plot not found")
     return dossier
+
+
+@app.get("/api/dossier/bulk")
+def get_bulk_dossier():
+    """Returns all parcel_info + encroachment data keyed by uid in one payload.
+    Client caches in IndexedDB — enables instant zero-API-call dossier rendering."""
+    json_bytes = db.get_bulk_dossier_json_bytes()
+    return Response(content=json_bytes, media_type="application/json")
 
 
 @app.get("/api/plots/{plot_id}")
