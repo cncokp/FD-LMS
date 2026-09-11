@@ -313,6 +313,7 @@ const MapEngine = {
 
   resetToDefaultExtent() {
     if (this.map && this.defaultParkBounds) {
+      this.map.invalidateSize();
       this.map.fitBounds(this.defaultParkBounds, { padding: [35, 35] });
     }
   },
