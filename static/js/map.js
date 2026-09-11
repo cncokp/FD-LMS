@@ -32,7 +32,6 @@ const PlotLabelLayer = L.Layer.extend({
       }
     };
 
-    map.on('move', this._onMove, this);
     map.on('moveend', this._onMove, this);
     map.on('zoomend', this._onMove, this);
     map.on('resize', this._resize, this);
@@ -48,7 +47,6 @@ const PlotLabelLayer = L.Layer.extend({
     if (this._canvas && this._canvas.parentNode) {
       this._canvas.parentNode.removeChild(this._canvas);
     }
-    map.off('move', this._onMove, this);
     map.off('moveend', this._onMove, this);
     map.off('zoomend', this._onMove, this);
     map.off('resize', this._resize, this);
@@ -107,6 +105,7 @@ const PlotLabelLayer = L.Layer.extend({
     else defaultFontSize = 10.5;
 
     ctx.lineJoin = 'round';
+    const pxPerDegreeLng = (256 * Math.pow(2, zoom)) / 360;
 
     for (let i = 0; i < this._labels.length; i++) {
       const item = this._labels[i];
@@ -119,8 +118,7 @@ const PlotLabelLayer = L.Layer.extend({
 
         let itemFontSize = defaultFontSize;
         if (item.radius && item.radius > 0) {
-          const edgePt = this._map.latLngToLayerPoint([lat, lng + item.radius]);
-          const clearancePx = Math.hypot(pt.x - edgePt.x, pt.y - edgePt.y);
+          const clearancePx = item.radius * pxPerDegreeLng;
 
           if (clearancePx < 4.5) continue;
 
@@ -350,8 +348,43 @@ const MapEngine = {
     this.map.getPane('encroachPane').style.zIndex = 450;
     this.map.getPane('encroachPane').style.pointerEvents = 'none';
 
-    // Set canvasRenderer pane to csPane with 1.2 padding buffer to keep 3.4x viewport in canvas for zero-lag pan
-    this.canvasRenderer = L.canvas({ padding: 1.2, tolerance: 10, pane: 'csPane' });
+    // Set canvasRenderer pane to csPane with 0.5 padding buffer to keep 2.0x viewport in canvas for zero-lag pan without GPU overload
+    this.canvasRenderer = L.canvas({ padding: 0.5, tolerance: 10, pane: 'csPane' });
+
+    // Patch _updatePaths with spatial viewport culling to eliminate zoom freeze on 12,000+ vector parcels
+    this.canvasRenderer._updatePaths = function () {
+      this._redrawBounds = null;
+      if (!this._map) return;
+      const padBounds = this._map.getBounds().pad(0.55);
+      const south = padBounds.getSouth();
+      const north = padBounds.getNorth();
+      const west = padBounds.getWest();
+      const east = padBounds.getEast();
+
+      for (const id in this._layers) {
+        const layer = this._layers[id];
+        const f = layer.feature;
+        const b = f && (f._bbox || f.bbox);
+        if (b) {
+          // b: [minLng, minLat, maxLng, maxLat]
+          if (b[2] < west || b[0] > east || b[3] < south || b[1] > north) {
+            layer._parts = [];
+            layer._pxBounds = null;
+            continue;
+          }
+        } else if (layer.getBounds) {
+          if (!layer._geoBounds) layer._geoBounds = layer.getBounds();
+          const gb = layer._geoBounds;
+          if (gb && (gb.getEast() < west || gb.getWest() > east || gb.getNorth() < south || gb.getSouth() > north)) {
+            layer._parts = [];
+            layer._pxBounds = null;
+            continue;
+          }
+        }
+        layer._update();
+      }
+      this._redraw();
+    };
     this.encroachRenderer = L.svg({ pane: 'encroachPane' });
 
     this.map.createPane('hoverPane');
