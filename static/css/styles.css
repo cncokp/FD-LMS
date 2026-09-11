@@ -279,6 +279,16 @@ body {
   will-change: transform;
 }
 
+/* Interactive Plot Hover Cursor (pointer hand icon when hovering over any parcel or encroachment) */
+#map.map-hover-plot,
+#map.map-hover-plot .leaflet-container,
+#map.map-hover-plot .leaflet-grab,
+#map.map-hover-plot canvas,
+#map.map-hover-plot svg,
+#map.map-hover-plot .leaflet-interactive {
+  cursor: pointer !important;
+}
+
 /* Dynamic Map Loading Indicator — Modern Engaging GIS Loader */
 .map-loading-indicator {
   position: absolute;

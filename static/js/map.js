@@ -372,12 +372,43 @@ const MapEngine = {
     });
 
     // Hover prefetch: silently fetch dossier data while the user moves over plots.
-    // By click-time the data is already in _dossierCache → renders instantly.
+    // Interactive Plot Hover Cursor & Background Prefetch
+    let _hoverThrottled = false;
     let _prefetchTimer = null;
     let _lastPrefetchId = null;
+
     this.map.on('mousemove', (e) => {
+      // 1. Dynamic Hover Cursor: switch to pointer over any CS plot, Forest plot, or Encroachment
+      if (!_hoverThrottled) {
+        _hoverThrottled = true;
+        requestAnimationFrame(() => {
+          _hoverThrottled = false;
+          const container = this.map.getContainer();
+          let isOverPlot = false;
+
+          if (this.isEncroachmentsVisible && this.rawEncroachData && this.rawEncroachData.features) {
+            if (this.pointInFeatures(e.latlng, this.rawEncroachData.features)) {
+              isOverPlot = true;
+            }
+          }
+
+          if (!isOverPlot && (this.isAllPlotsVisible || this.isForestPlotsVisible)) {
+            if (this.findPlotAtLatLng(e.latlng)) {
+              isOverPlot = true;
+            }
+          }
+
+          if (isOverPlot) {
+            container.classList.add('map-hover-plot');
+          } else {
+            container.classList.remove('map-hover-plot');
+          }
+        });
+      }
+
+      // 2. Prefetch dossier if bulk data is not yet in memory
       if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return;
-      if (_bulkDossierMap) return; // bulk data loaded — no prefetch needed
+      if (_bulkDossierMap) return;
       if (_prefetchTimer) return;
       _prefetchTimer = setTimeout(() => {
         _prefetchTimer = null;
@@ -385,14 +416,21 @@ const MapEngine = {
         if (!feat) return;
         const plotId = feat.properties && feat.properties.id;
         if (!plotId || plotId === _lastPrefetchId) return;
-        if (_dossierCacheGet(plotId)) return; // already cached
+        if (_dossierCacheGet(plotId)) return;
         _lastPrefetchId = plotId;
-        // Silent background fetch — no UI change, just populate the cache
         fetch(`/api/plots/cs/${plotId}`)
           .then(r => r.json())
           .then(data => { if (data && data.plot) _dossierCacheSet(plotId, data); })
           .catch(() => {});
       }, 100);
+    });
+
+    this.map.on('mouseout', () => {
+      this.map.getContainer().classList.remove('map-hover-plot');
+    });
+
+    this.map.on('dragstart', () => {
+      this.map.getContainer().classList.remove('map-hover-plot');
     });
 
     await Promise.all([
@@ -552,16 +590,8 @@ const MapEngine = {
     }
   },
 
-  findPlotAtLatLng(latlng) {
-    if (!latlng) return null;
-    if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return null;
-
-    let features = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
-    if (!this.isAllPlotsVisible && this.isForestPlotsVisible) {
-      features = this.forestFeatures || [];
-    }
-    if (!features.length) return null;
-
+  pointInFeatures(latlng, features) {
+    if (!latlng || !features || !features.length) return null;
     const lng = latlng.lng;
     const lat = latlng.lat;
 
@@ -596,34 +626,39 @@ const MapEngine = {
       return true;
     }
 
-    const matched = [];
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const g = c.geometry;
       if (!g) continue;
       if (g.type === 'Polygon') {
-        if (pointInPolygon(lng, lat, g.coordinates)) matched.push(c);
+        if (pointInPolygon(lng, lat, g.coordinates)) return c;
       } else if (g.type === 'MultiPolygon') {
         if (g.coordinates) {
           for (let k = 0; k < g.coordinates.length; k++) {
-            if (pointInPolygon(lng, lat, g.coordinates[k])) {
-              matched.push(c);
-              break;
-            }
+            if (pointInPolygon(lng, lat, g.coordinates[k])) return c;
           }
         }
       }
     }
+    return null;
+  },
 
-    if (!matched.length) return null;
+  findPlotAtLatLng(latlng) {
+    if (!latlng) return null;
+    if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return null;
 
-    // If both layers are visible, prioritize Forest Department plot if matched
-    if (this.isForestPlotsVisible) {
-      const forestCandidate = matched.find(c => c.properties && c.properties.beat_name && c.properties.beat_name.trim());
+    // If forest plots are visible, prioritize Forest Department plot
+    if (this.isForestPlotsVisible && this.forestFeatures && this.forestFeatures.length) {
+      const forestCandidate = this.pointInFeatures(latlng, this.forestFeatures);
       if (forestCandidate) return forestCandidate;
     }
 
-    return matched[0];
+    if (this.isAllPlotsVisible) {
+      const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+      return this.pointInFeatures(latlng, allFeatures);
+    }
+
+    return null;
   },
 
   renderCSPlotsGeoJSON(geojsonData) {
@@ -958,6 +993,7 @@ const MapEngine = {
   renderEncroachmentsGeoJSON(geojsonData) {
     this.layers.encroachments.clearLayers();
     if (!geojsonData || !geojsonData.features) return;
+    this.indexPlotBBoxes(geojsonData.features);
 
     const geoLayer = L.geoJSON(geojsonData, {
       pane: 'encroachPane',
