@@ -314,14 +314,14 @@ const MapEngine = {
   resetToDefaultExtent() {
     if (this.map && this.defaultParkBounds) {
       this.map.invalidateSize();
-      this.map.fitBounds(this.defaultParkBounds, { padding: [35, 35] });
+      this.map.fitBounds(this.defaultParkBounds, { padding: [10, 10] });
     }
   },
 
   async init() {
     this.map = L.map('map', {
       center: this.defaultParkCenter,
-      zoom: 14,
+      zoom: 14.5,
       minZoom: 10,
       maxZoom: 22,
       zoomControl: false,
@@ -329,10 +329,10 @@ const MapEngine = {
       fadeAnimation: false,
       zoomAnimation: true,
       zoomAnimationThreshold: 8,
-      zoomSnap: 1,
-      zoomDelta: 1,
+      zoomSnap: 0.25,
+      zoomDelta: 0.5,
       wheelPxPerZoomLevel: 100,
-      wheelDebounceTime: 50,
+      wheelDebounceTime: 40,
       preferCanvas: true
     });
 
