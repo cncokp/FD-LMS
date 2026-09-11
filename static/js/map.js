@@ -455,21 +455,33 @@ const MapEngine = {
   },
 
   async loadCSPlots() {
-    let loadedFromCache = false;
+    const CACHE_KEY = 'cs_plots_v2';
+    const CACHE_TTL = 86400 * 1000; // 24 hours
+
+    let cachedData = null;
 
     try {
-      const cachedCS = await SpatialCache.get('cs_plots');
-      if (cachedCS && cachedCS.features && cachedCS.features.length > 0) {
-        this.rawCSData = cachedCS;
-        this.renderCSPlotsGeoJSON(this.rawCSData);
-        loadedFromCache = true;
-        this.hideLoading();
+      const cached = await SpatialCache.get(CACHE_KEY) || await SpatialCache.get('cs_plots');
+      if (cached) {
+        cachedData = cached.data || cached;
+        const ts = cached._ts || 0;
+        if (cachedData && cachedData.features && cachedData.features.length > 0) {
+          this.rawCSData = cachedData;
+          this.renderCSPlotsGeoJSON(this.rawCSData);
+          this.hideLoading();
+
+          // If fresh (< 24 hours), we are completely done! Do not refetch, do not re-show loading, do not jump zoom!
+          if (ts && (Date.now() - ts) < CACHE_TTL) {
+            return;
+          }
+        }
       }
     } catch (err) {
       console.warn('Cache lookup skipped:', err);
     }
 
-    if (!loadedFromCache) {
+    // Only show loading if we didn't have any cached data to display
+    if (!cachedData) {
       this.showLoading('Loading 11,300+ Cadastral Parcels...');
     }
 
@@ -478,23 +490,32 @@ const MapEngine = {
       const csData = await res.json();
 
       if (csData && csData.features && csData.features.length > 0) {
-        SpatialCache.set('cs_plots', csData);
+        SpatialCache.set(CACHE_KEY, { data: csData, _ts: Date.now() });
         this.rawCSData = csData;
-        this.showLoading('Rendering Cadastral Parcels...');
-        await new Promise(r => setTimeout(r, 20));
-        this.renderCSPlotsGeoJSON(this.rawCSData);
-        this.hideLoading();
 
-        if (csData.bounds) {
-          const [minx, miny, maxx, maxy] = csData.bounds;
-          this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [30, 30] });
+        // If cold visit (first time without cache):
+        if (!cachedData) {
+          this.showLoading('Rendering Cadastral Parcels...');
+          await new Promise(r => setTimeout(r, 20));
+          this.renderCSPlotsGeoJSON(this.rawCSData);
+          this.hideLoading();
+
+          // Set initial bounds only on initial cold visit so user's map position is never jerked later
+          if (csData.bounds) {
+            const [minx, miny, maxx, maxy] = csData.bounds;
+            this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [30, 30] });
+          }
+        } else {
+          // Stale-while-revalidate background update:
+          // Silently refresh layer without showing loading screen and WITHOUT resetting user's zoom/pan!
+          this.renderCSPlotsGeoJSON(this.rawCSData);
         }
       } else {
         this.hideLoading();
       }
     } catch (e) {
       this.hideLoading();
-      if (!loadedFromCache) {
+      if (!cachedData) {
         console.error("Failed to load CS plots:", e);
       }
     }
@@ -909,10 +930,23 @@ const MapEngine = {
   },
 
   async loadEncroachments() {
+    const CACHE_KEY = 'encroachments_v2';
+    const CACHE_TTL = 86400 * 1000; // 24 hours
+
+    try {
+      const cached = await SpatialCache.get(CACHE_KEY);
+      if (cached && cached._ts && (Date.now() - cached._ts) < CACHE_TTL && cached.data && cached.data.features) {
+        this.rawEncroachData = cached.data;
+        this.renderEncroachmentsGeoJSON(cached.data);
+        return; // served from cache — no network fetch needed
+      }
+    } catch (e) {}
+
     try {
       const res = await fetch('/api/encroachments/geojson');
       const data = await res.json();
       if (data && data.features && data.features.length > 0) {
+        SpatialCache.set(CACHE_KEY, { data, _ts: Date.now() });
         this.rawEncroachData = data;
         this.renderEncroachmentsGeoJSON(data);
       }
