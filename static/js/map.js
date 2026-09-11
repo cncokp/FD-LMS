@@ -205,7 +205,7 @@ function _dossierCacheSet(plotId, data) {
 // ---------------------------------------------------------------------------
 let _bulkDossierMap = null; // null = not yet loaded; {} = loaded but empty
 
-const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier';
+const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier_v2';
 const BULK_DOSSIER_TTL       = 86400 * 1000; // 24 hours
 
 async function _storeBulkInMemory(payload) {
@@ -1258,18 +1258,41 @@ const MapEngine = {
         type: 'CS Cadastral Survey'
       };
 
-      // Priority A — bulk map
-      if (uid && _bulkDossierMap && _bulkDossierMap[uid]) {
-        const bulk = _bulkDossierMap[uid];
-        Dossier.renderCSPlot({
-          plot: plotBase, bounds,
-          parcel_info: { cs_uid: uid, ...bulk },
-          encroachment: bulk.encroachment || { has_encroachment: false, count: 0, total_encroached_acre: 0, records: [] }
-        });
-        return;
+      // Priority A — bulk map (instant 0ms in-memory lookup)
+      if (_bulkDossierMap) {
+        if (uid && _bulkDossierMap[uid]) {
+          const bulk = _bulkDossierMap[uid];
+          Dossier.renderCSPlot({
+            plot: plotBase, bounds,
+            parcel_info: { cs_uid: uid, ...bulk },
+            encroachment: bulk.encroachment || { has_encroachment: false, count: 0, total_encroached_acre: 0, records: [] }
+          });
+          return;
+        } else {
+          // Bulk dossier is fully loaded and includes 100% of all registered parcel_info records.
+          // Since this plot is not in the register, render immediately as non-registered parcel with 0ms latency.
+          Dossier.renderCSPlot({
+            plot: plotBase, bounds,
+            parcel_info: {
+              has_record: false,
+              cs_uid: uid,
+              cs_plot_no: p.plot_no,
+              mouza: p.mouza || 'N/A',
+              cs_jl: p.jl_no || 'N/A',
+              beat_name: p.beat_name || null,
+              range: null,
+              total_area: initialArea,
+              total_area_fd: null,
+              total_area_others: null,
+              linked_rs_plots: []
+            },
+            encroachment: { has_encroachment: false, count: 0, total_encroached_acre: 0, records: [] }
+          });
+          return;
+        }
       }
 
-      // Optimistic render while fetching
+      // Optimistic render while fetching (only during initial startup before bulk map is ready)
       Dossier.renderCSPlot({ plot: plotBase, bounds, loadingParcelInfo: true });
 
       if (plotId) {

@@ -635,23 +635,31 @@ def get_bulk_dossier_json_bytes() -> bytes:
 
     if is_supabase_cloud_enabled():
         try:
-            def _fetch_parcel_api():
+            def _fetch_parcel_chunk(start, end):
                 r = _supabase_request(
-                    f"parcel_info?select={PARCEL_COLS}&order=cs_uid,id&limit=20000"
+                    f"parcel_info?select={PARCEL_COLS}&order=cs_uid,id",
+                    headers_extra={"Range": f"{start}-{end}"}
                 )
                 return json.loads(r.read().decode("utf-8"))
 
             def _fetch_encroach_api():
                 r = _supabase_request(
-                    f"encroachment_info?select={ENCROACH_COLS}&order=uid,id&limit=10000"
+                    f"encroachment_info?select={ENCROACH_COLS}&order=uid,id&limit=1000"
                 )
                 return json.loads(r.read().decode("utf-8"))
 
-            with ThreadPoolExecutor(max_workers=2) as ex:
-                fut_p = ex.submit(_fetch_parcel_api)
-                fut_e = ex.submit(_fetch_encroach_api)
-                parcel_rows   = fut_p.result()
-                encroach_rows = fut_e.result()
+            # parcel_info has 3,458 rows — fetch 4 parallel chunks so no records are missed
+            chunks = [(0, 999), (1000, 1999), (2000, 2999), (3000, 3999)]
+            parcel_rows: List[Dict] = []
+            encroach_rows: List[Dict] = []
+
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                fut_encroach = ex.submit(_fetch_encroach_api)
+                fut_parcels  = [ex.submit(_fetch_parcel_chunk, c[0], c[1]) for c in chunks]
+
+                encroach_rows = fut_encroach.result()
+                for fut in fut_parcels:
+                    parcel_rows.extend(fut.result())
 
             return _build_bulk_payload(parcel_rows, encroach_rows)
         except Exception as e:
