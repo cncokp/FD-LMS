@@ -28,6 +28,16 @@ _cs_cache_bytes: Optional[bytes] = None
 _encroach_cache_bytes: Optional[bytes] = None
 _bulk_dossier_cache_bytes: Optional[bytes] = None
 
+# Beat name corrections for specific plots:
+# Araishprashad (JL 18): Plots 621, 622, 623 -> Baupara Beat; Plots 321, 979 -> Park Beat
+BEAT_NAME_OVERRIDES: Dict[str, str] = {
+    "18621": "Baupara",    # Araishprashad CS Plot 621 -> Baupara Beat
+    "18622": "Baupara",    # Araishprashad CS Plot 622 -> Baupara Beat
+    "18623": "Baupara",    # Araishprashad CS Plot 623 -> Baupara Beat
+    "18321": "Park Beat",  # Araishprashad CS Plot 321 -> Park Beat
+    "18979": "Park Beat",  # Araishprashad CS Plot 979 -> Park Beat
+}
+
 
 # ---------------------------------------------------------------------------
 # Connection helpers
@@ -128,11 +138,13 @@ def _assemble_features_json(rows: List[Dict[str, Any]]) -> bytes:
         if ry2 > maxy_agg: maxy_agg = ry2
 
         pid    = r["id"]
-        uid_val = json.dumps(str(r["uid"]) if r.get("uid") is not None else "")
+        uid_str = str(r["uid"]) if r.get("uid") is not None else ""
+        eff_beat = BEAT_NAME_OVERRIDES.get(uid_str, r.get("beat_name") or "")
+        uid_val = json.dumps(uid_str)
         pno    = json.dumps(r["plot_no"] or "")
         mouza  = json.dumps(r["mouza"] or "")
         jl     = json.dumps(r["jl_no"] or "")
-        beat   = json.dumps(r.get("beat_name") or "")
+        beat   = json.dumps(eff_beat)
         area   = str(r["area_acre"] or 0)
         llat   = str(r["label_lat"] or 0)
         llng   = str(r["label_lng"] or 0)
@@ -284,8 +296,8 @@ def _build_parcel_dossier_payload(
     encroachment_records: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     bounds     = [plot["minx"], plot["miny"], plot["maxx"], plot["maxy"]]
-    beat_name  = plot.get("beat_name")
     plot_uid   = str(plot.get("uid") or "")
+    beat_name  = BEAT_NAME_OVERRIDES.get(plot_uid, plot.get("beat_name"))
 
     encroach_list = []
     if encroachment_records:
@@ -334,7 +346,7 @@ def _build_parcel_dossier_payload(
         }
 
     first_rec       = parcel_records[0]
-    effective_beat  = first_rec.get("beat_name") or beat_name
+    effective_beat  = BEAT_NAME_OVERRIDES.get(plot_uid, first_rec.get("beat_name") or beat_name)
     range_val       = first_rec.get("range")
     cs_plot_no      = first_rec.get("cs_plot_no") or plot["plot_no"]
     mouza           = first_rec.get("mouza") or plot["mouza"] or "N/A"
@@ -583,7 +595,7 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
             "cs_plot_no":       first.get("cs_plot_no"),
             "mouza":            first.get("mouza"),
             "cs_jl":            first.get("cs_jl"),
-            "beat_name":        first.get("beat_name"),
+            "beat_name":        BEAT_NAME_OVERRIDES.get(uid, first.get("beat_name")),
             "range":            first.get("range"),
             "total_area":       recorded_total,
             "total_area_fd":    total_area_fd,

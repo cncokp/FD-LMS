@@ -218,7 +218,7 @@ function _dossierCacheSet(plotId, data) {
 // ---------------------------------------------------------------------------
 let _bulkDossierMap = null; // null = not yet loaded; {} = loaded but empty
 
-const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier_v2';
+const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier_v3';
 const BULK_DOSSIER_TTL       = 86400 * 1000; // 24 hours
 
 async function _storeBulkInMemory(payload) {
@@ -511,13 +511,13 @@ const MapEngine = {
   },
 
   async loadCSPlots() {
-    const CACHE_KEY = 'cs_plots_v2';
+    const CACHE_KEY = 'cs_plots_v3';
     const CACHE_TTL = 86400 * 1000; // 24 hours
 
     let cachedData = null;
 
     try {
-      const cached = await SpatialCache.get(CACHE_KEY) || await SpatialCache.get('cs_plots');
+      const cached = await SpatialCache.get(CACHE_KEY);
       if (cached) {
         cachedData = cached.data || cached;
         const ts = cached._ts || 0;
