@@ -272,6 +272,7 @@ const MapEngine = {
     beatBoundaries: null,
     beatLabels: null,
     encroachments: null,
+    hover: null,
     highlight: null,
     filterHighlight: null
   },
@@ -289,6 +290,10 @@ const MapEngine = {
   currentCSFeatures: [],
   forestFeatures: [],
   nonForestFeatures: [],
+  plotsByUid: null,
+  _currentHoveredId: null,
+  _selectedUid: null,
+  _selectedPlotId: null,
   isAllPlotsVisible: true,
   isForestPlotsVisible: true,
   isCSPlotsVisible: true,
@@ -337,6 +342,10 @@ const MapEngine = {
     this.canvasRenderer = L.canvas({ padding: 0.5, tolerance: 10, pane: 'csPane' });
     this.encroachRenderer = L.svg({ pane: 'encroachPane' });
 
+    this.map.createPane('hoverPane');
+    this.map.getPane('hoverPane').style.zIndex = 470;
+    this.map.getPane('hoverPane').style.pointerEvents = 'none';
+
     this.map.createPane('highlightPane');
     this.map.getPane('highlightPane').style.zIndex = 480;
     this.map.getPane('highlightPane').style.pointerEvents = 'none';
@@ -353,6 +362,7 @@ const MapEngine = {
     this.layers.beatBoundaries = L.featureGroup([], { pane: 'beatPane' }).addTo(this.map);
     this.layers.beatLabels = L.featureGroup([], { pane: 'labelPane' }).addTo(this.map);
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
+    this.layers.hover = L.featureGroup([], { pane: 'hoverPane' }).addTo(this.map);
     this.layers.highlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
     this.layers.filterHighlight = L.featureGroup([], { pane: 'highlightPane' }).addTo(this.map);
 
@@ -396,30 +406,37 @@ const MapEngine = {
     let _lastPrefetchId = null;
 
     this.map.on('mousemove', (e) => {
-      // 1. Dynamic Hover Cursor: switch to pointer over any CS plot, Forest plot, or Encroachment
+      // 1. Dynamic Hover Cursor & Slight Plot Highlight
       if (!_hoverThrottled) {
         _hoverThrottled = true;
         requestAnimationFrame(() => {
           _hoverThrottled = false;
           const container = this.map.getContainer();
           let isOverPlot = false;
+          let hoveredFeature = null;
+          let isEncroach = false;
 
           if (this.isEncroachmentsVisible && this.rawEncroachData && this.rawEncroachData.features) {
-            if (this.pointInFeatures(e.latlng, this.rawEncroachData.features)) {
+            hoveredFeature = this.pointInFeatures(e.latlng, this.rawEncroachData.features);
+            if (hoveredFeature) {
               isOverPlot = true;
+              isEncroach = true;
             }
           }
 
           if (!isOverPlot && (this.isAllPlotsVisible || this.isForestPlotsVisible)) {
-            if (this.findPlotAtLatLng(e.latlng)) {
+            hoveredFeature = this.findPlotAtLatLng(e.latlng);
+            if (hoveredFeature) {
               isOverPlot = true;
             }
           }
 
-          if (isOverPlot) {
+          if (isOverPlot && hoveredFeature) {
             container.classList.add('map-hover-plot');
+            this.setHoverPlot(hoveredFeature, isEncroach);
           } else {
             container.classList.remove('map-hover-plot');
+            this.clearHoverPlot();
           }
         });
       }
@@ -445,10 +462,16 @@ const MapEngine = {
 
     this.map.on('mouseout', () => {
       this.map.getContainer().classList.remove('map-hover-plot');
+      this.clearHoverPlot();
     });
 
     this.map.on('dragstart', () => {
       this.map.getContainer().classList.remove('map-hover-plot');
+      this.clearHoverPlot();
+    });
+
+    this.map.on('zoomstart', () => {
+      this.clearHoverPlot();
     });
 
     await Promise.all([
@@ -686,6 +709,7 @@ const MapEngine = {
     this.currentCSFeatures = (geojsonData && geojsonData.features) ? geojsonData.features : [];
     this.forestFeatures = [];
     this.nonForestFeatures = [];
+    this.plotsByUid = new Map();
 
     for (let i = 0; i < this.currentCSFeatures.length; i++) {
       const f = this.currentCSFeatures[i];
@@ -694,6 +718,15 @@ const MapEngine = {
         this.forestFeatures.push(f);
       } else {
         this.nonForestFeatures.push(f);
+      }
+      if (p && p.uid != null) {
+        const sUid = String(p.uid);
+        let list = this.plotsByUid.get(sUid);
+        if (!list) {
+          list = [];
+          this.plotsByUid.set(sUid, list);
+        }
+        list.push(f);
       }
     }
 
@@ -1144,21 +1177,105 @@ const MapEngine = {
     badge.textContent = `${count} Active`;
   },
 
+  setHoverPlot(feature, isEncroach = false) {
+    if (!feature || !this.layers.hover) return;
+
+    const p = feature.properties || {};
+    const featureId = p.id != null ? p.id : (p.uid != null ? p.uid : (p.encroach_id != null ? p.encroach_id : (feature._bbox ? feature._bbox.join(',') : null)));
+
+    // If already hovering the exact same feature, avoid redundant redraws
+    if (this._currentHoveredId === featureId) return;
+    this._currentHoveredId = featureId;
+
+    this.layers.hover.clearLayers();
+
+    // If this feature is already actively selected in the dossier, don't double highlight
+    if (this._selectedUid && p.uid && String(this._selectedUid) === String(p.uid)) {
+      return;
+    }
+    if (this._selectedPlotId && p.id && String(this._selectedPlotId) === String(p.id)) {
+      return;
+    }
+
+    // Determine style based on whether it's encroachment, forest plot, or general CS plot
+    let style = null;
+    if (isEncroach || p.encroach_id || p.encroached_area_acre) {
+      style = {
+        color: '#f87171',
+        weight: 2.5,
+        opacity: 0.95,
+        fillColor: '#ef4444',
+        fillOpacity: 0.25
+      };
+    } else if (p.beat_name && p.beat_name.trim()) {
+      // Forest plot: luminous mint outline with delicate translucent wash
+      style = {
+        color: '#34d399',
+        weight: 2.2,
+        opacity: 0.95,
+        fillColor: '#10b981',
+        fillOpacity: 0.22
+      };
+    } else {
+      // Standard CS plot: slight sky-blue highlight
+      style = {
+        color: '#38bdf8',
+        weight: 2.0,
+        opacity: 0.95,
+        fillColor: '#38bdf8',
+        fillOpacity: 0.16
+      };
+    }
+
+    // Support multi-part parcel highlighting (all parts of the same UID light up in unison)
+    const targetUid = p.uid;
+    let featuresToHighlight = [feature];
+    if (targetUid && this.plotsByUid && this.plotsByUid.has(String(targetUid))) {
+      featuresToHighlight = this.plotsByUid.get(String(targetUid));
+    }
+
+    L.geoJSON(featuresToHighlight, {
+      pane: 'hoverPane',
+      style: style,
+      interactive: false
+    }).addTo(this.layers.hover);
+  },
+
+  clearHoverPlot() {
+    this._currentHoveredId = null;
+    if (this.layers.hover) {
+      this.layers.hover.clearLayers();
+    }
+  },
+
   highlightPlot(feature) {
     if (!this.layers.highlight) return;
     this.layers.highlight.clearLayers();
 
-    if (!feature) return;
+    if (!feature) {
+      this._selectedUid = null;
+      this._selectedPlotId = null;
+      return;
+    }
+
+    const p = feature.properties || {};
+    this._selectedUid = p.uid ? String(p.uid) : null;
+    this._selectedPlotId = p.id ? String(p.id) : null;
+    this.clearHoverPlot();
 
     // Find and highlight all plots with the same UID
-    const targetUid = feature.properties ? feature.properties.uid : null;
+    const targetUid = p.uid;
     let featuresToHighlight = [feature];
 
     if (targetUid) {
-      const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
-      const matches = allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid));
-      if (matches.length > 0) {
-        featuresToHighlight = matches;
+      if (this.plotsByUid && this.plotsByUid.has(String(targetUid))) {
+        featuresToHighlight = this.plotsByUid.get(String(targetUid));
+      } else {
+        const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+        const matches = allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid));
+        if (matches.length > 0) {
+          featuresToHighlight = matches;
+        }
       }
     }
 
@@ -1176,6 +1293,9 @@ const MapEngine = {
   },
 
   clearHighlight() {
+    this._selectedUid = null;
+    this._selectedPlotId = null;
+    this.clearHoverPlot();
     if (this.layers.highlight) {
       this.layers.highlight.clearLayers();
     }
