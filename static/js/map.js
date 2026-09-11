@@ -306,14 +306,21 @@ const MapEngine = {
   _plotClicked: false,
 
   defaultParkBounds: [
-    [24.030, 90.370],
-    [24.150, 90.460]
+    [24.057734, 90.388016],
+    [24.102262, 90.426809]
   ],
+  defaultParkCenter: [24.079874, 90.407504],
+
+  resetToDefaultExtent() {
+    if (this.map && this.defaultParkBounds) {
+      this.map.fitBounds(this.defaultParkBounds, { padding: [35, 35] });
+    }
+  },
 
   async init() {
     this.map = L.map('map', {
-      center: [24.088, 90.415],
-      zoom: 13,
+      center: this.defaultParkCenter,
+      zoom: 14,
       minZoom: 10,
       maxZoom: 22,
       zoomControl: false,
@@ -486,9 +493,8 @@ const MapEngine = {
       this.clearHoverPlot();
     });
 
-    // Stage 0: Immediately set national park viewport so user never sees empty/ocean canvas
-    this.defaultParkBounds = [[24.015, 90.380], [24.108, 90.436]];
-    this.map.fitBounds(this.defaultParkBounds, { padding: [30, 30] });
+    // Stage 0: Zoom directly to Park Beat extent by default on first loading
+    this.resetToDefaultExtent();
 
     // Stage 1: Load Beat Boundaries + Encroachments immediately (<100ms)
     await Promise.all([
@@ -1411,6 +1417,7 @@ const MapEngine = {
       this.layers.filterHighlight.clearLayers();
     }
     this.clearHighlight();
+    this.resetToDefaultExtent();
   },
 
   getFeatureCenter(feature) {

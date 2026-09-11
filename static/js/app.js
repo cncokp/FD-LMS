@@ -160,6 +160,13 @@ function setupBasemapSwitcher() {
       if (MapEngine.map) MapEngine.map.zoomOut();
     });
   }
+
+  const btnDefaultExtent = document.getElementById('btnDefaultExtent');
+  if (btnDefaultExtent) {
+    btnDefaultExtent.addEventListener('click', () => {
+      MapEngine.resetToDefaultExtent();
+    });
+  }
 }
 
 function setupLayerToggles() {
