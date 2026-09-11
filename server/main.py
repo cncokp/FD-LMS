@@ -229,6 +229,14 @@ def export_csv():
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.get("/favicon.ico")
+def serve_favicon():
+    icon_path = os.path.join(STATIC_DIR, "bdfd_logo.svg")
+    if os.path.exists(icon_path):
+        return FileResponse(icon_path, media_type="image/svg+xml")
+    return Response(status_code=204)
+
+
 @app.get("/")
 def serve_index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))

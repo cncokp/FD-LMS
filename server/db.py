@@ -11,7 +11,7 @@ import io
 import urllib.request
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
