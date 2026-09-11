@@ -401,12 +401,13 @@ const MapEngine = {
       this.loadBeatBoundaries(),
       loadBulkDossier()          // bulk parcel+encroachment → IndexedDB → _bulkDossierMap
     ]);
+    this.hideLoading();
   },
 
   showLoading(text = 'Loading Cadastral Parcels...') {
     const el = document.getElementById('mapLoadingIndicator');
     if (el) {
-      const span = el.querySelector('span');
+      const span = el.querySelector('#loadingStatusText') || el.querySelector('span');
       if (span && text) span.textContent = text;
       el.classList.remove('hidden');
     }
@@ -469,7 +470,7 @@ const MapEngine = {
     }
 
     if (!loadedFromCache) {
-      this.showLoading('Loading Cadastral Parcels...');
+      this.showLoading('Loading 11,300+ Cadastral Parcels...');
     }
 
     try {
@@ -479,6 +480,8 @@ const MapEngine = {
       if (csData && csData.features && csData.features.length > 0) {
         SpatialCache.set('cs_plots', csData);
         this.rawCSData = csData;
+        this.showLoading('Rendering Cadastral Parcels...');
+        await new Promise(r => setTimeout(r, 20));
         this.renderCSPlotsGeoJSON(this.rawCSData);
         this.hideLoading();
 

@@ -279,7 +279,7 @@ body {
   will-change: transform;
 }
 
-/* Dynamic Map Loading Indicator */
+/* Dynamic Map Loading Indicator — Modern Engaging GIS Loader */
 .map-loading-indicator {
   position: absolute;
   top: 50%;
@@ -287,41 +287,147 @@ body {
   transform: translate(-50%, -50%);
   z-index: 600;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  background: rgba(11, 15, 25, 0.88);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  gap: 14px;
+  background: rgba(11, 15, 25, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(16, 185, 129, 0.35);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 24px rgba(16, 185, 129, 0.15);
-  padding: 10px 20px;
-  border-radius: 30px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65), 0 0 35px rgba(16, 185, 129, 0.2);
+  padding: 24px 32px;
+  border-radius: 18px;
   color: #f8fafc;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-sans);
+  min-width: 290px;
+  max-width: 360px;
+  text-align: center;
   pointer-events: none;
-  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.35s;
 }
 
 .map-loading-indicator.hidden {
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   transform: translate(-50%, -46%) scale(0.95);
 }
 
-.map-loading-indicator .spinner-ring {
-  width: 15px;
-  height: 15px;
-  border: 2px solid rgba(16, 185, 129, 0.25);
-  border-top-color: #10b981;
-  border-radius: 50%;
-  animation: mapSpin 0.75s linear infinite;
-  flex-shrink: 0;
+.map-loading-indicator .loading-visual {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-@keyframes mapSpin {
-  to { transform: rotate(360deg); }
+.map-loading-indicator .radar-pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(16, 185, 129, 0.45);
+  animation: radarPing 2.2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+.map-loading-indicator .spinner-orbit {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #10b981;
+  border-right-color: #00f0ff;
+  animation: orbitSpin 1.1s linear infinite;
+}
+
+.map-loading-indicator .orbit-dot {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background: #00f0ff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #00f0ff, 0 0 4px #fff;
+  transform: translateX(-50%);
+}
+
+.map-loading-indicator .loading-icon-core {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #10b981;
+  font-size: 17px;
+  box-shadow: inset 0 0 14px rgba(16, 185, 129, 0.25);
+  animation: iconBreath 2s ease-in-out infinite alternate;
+}
+
+.map-loading-indicator .loading-text-content {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.map-loading-indicator .loading-title {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #f8fafc;
+}
+
+.map-loading-indicator .loading-status {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.map-loading-indicator .loading-progress-track {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  margin-top: 2px;
+}
+
+.map-loading-indicator .loading-progress-shimmer {
+  position: absolute;
+  height: 100%;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, #10b981, #00f0ff, transparent);
+  border-radius: 4px;
+  animation: progressSlide 1.6s ease-in-out infinite;
+}
+
+@keyframes radarPing {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+@keyframes orbitSpin {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes iconBreath {
+  0% { transform: scale(0.96); opacity: 0.85; }
+  100% { transform: scale(1.04); opacity: 1; filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.6)); }
+}
+
+@keyframes progressSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
 }
 
 /* Bottom-Left Controls: Basemap Switcher & Zoom */
