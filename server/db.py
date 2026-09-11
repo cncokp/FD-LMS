@@ -5,7 +5,6 @@ Local SQLite has been removed — system requires Supabase connectivity.
 """
 
 import os
-import re
 import json
 import csv
 import io
