@@ -268,15 +268,10 @@ body {
   height: 100%;
   background: #090d16;
   z-index: 1;
-  will-change: transform;
 }
 
 .leaflet-container {
   font-family: var(--font-sans);
-}
-
-.leaflet-tile-pane {
-  will-change: transform;
 }
 
 /* Interactive Plot Hover Cursor (pointer hand icon when hovering over any parcel or encroachment) */

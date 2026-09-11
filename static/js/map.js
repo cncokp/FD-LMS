@@ -21,6 +21,7 @@ const PlotLabelLayer = L.Layer.extend({
     pane.appendChild(this._canvas);
 
     this._onMove = () => {
+      if (this._map && this._map._animatingZoom) return;
       if (!this._rafId) {
         this._rafId = requestAnimationFrame(() => {
           this._rafId = null;
@@ -30,6 +31,8 @@ const PlotLabelLayer = L.Layer.extend({
     };
 
     map.on('move', this._onMove, this);
+    map.on('moveend', this._onMove, this);
+    map.on('zoomend', this._onMove, this);
     map.on('resize', this._resize, this);
     this._resize();
     this._update();
@@ -44,6 +47,8 @@ const PlotLabelLayer = L.Layer.extend({
       this._canvas.parentNode.removeChild(this._canvas);
     }
     map.off('move', this._onMove, this);
+    map.off('moveend', this._onMove, this);
+    map.off('zoomend', this._onMove, this);
     map.off('resize', this._resize, this);
   },
 
@@ -70,6 +75,7 @@ const PlotLabelLayer = L.Layer.extend({
 
   _update() {
     if (!this._map || !this._canvas) return;
+    if (this._map._animatingZoom) return; // Never block zoom animation frames!
     const ctx = this._canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
@@ -78,6 +84,11 @@ const PlotLabelLayer = L.Layer.extend({
     if (zoom < 15 || this._labels.length === 0) return;
 
     const bounds = this._map.getBounds();
+    const south = bounds.getSouth();
+    const north = bounds.getNorth();
+    const west = bounds.getWest();
+    const east = bounds.getEast();
+
     const origin = this._map.containerPointToLayerPoint([0, 0]);
     L.DomUtil.setPosition(this._canvas, origin);
 
@@ -97,14 +108,16 @@ const PlotLabelLayer = L.Layer.extend({
 
     for (let i = 0; i < this._labels.length; i++) {
       const item = this._labels[i];
-      if (bounds.contains(item.latlng)) {
+      const lat = item.latlng[0];
+      const lng = item.latlng[1];
+      if (lat >= south && lat <= north && lng >= west && lng <= east) {
         const pt = this._map.latLngToLayerPoint(item.latlng);
         const x = pt.x - origin.x;
         const y = pt.y - origin.y;
 
         let itemFontSize = defaultFontSize;
         if (item.radius && item.radius > 0) {
-          const edgePt = this._map.latLngToLayerPoint([item.latlng[0], item.latlng[1] + item.radius]);
+          const edgePt = this._map.latLngToLayerPoint([lat, lng + item.radius]);
           const clearancePx = Math.hypot(pt.x - edgePt.x, pt.y - edgePt.y);
 
           if (clearancePx < 4.5) continue;
@@ -296,8 +309,13 @@ const MapEngine = {
       maxZoom: 22,
       zoomControl: false,
       attributionControl: false,
-      fadeAnimation: false,
+      fadeAnimation: true,
       zoomAnimation: true,
+      zoomAnimationThreshold: 8,
+      zoomSnap: 0.5,
+      zoomDelta: 0.5,
+      wheelPxPerZoomLevel: 120,
+      wheelDebounceTime: 40,
       preferCanvas: true
     });
 
@@ -463,9 +481,9 @@ const MapEngine = {
       maxZoom: 22,
       maxNativeZoom: 19,
       crossOrigin: true,
-      keepBuffer: 8,
-      updateWhenIdle: false,
-      updateWhenZooming: true
+      keepBuffer: 3,
+      updateWhenIdle: true,
+      updateWhenZooming: false
     };
 
     this.basemapLayers = {
