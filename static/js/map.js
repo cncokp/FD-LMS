@@ -180,6 +180,25 @@ const SpatialCache = {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Dossier LRU Cache — keyed by plot_id (integer), max 100 entries
+// JS Map preserves insertion order, so the first key is always the oldest.
+// ---------------------------------------------------------------------------
+const _dossierCache = new Map();
+const DOSSIER_CACHE_MAX = 100;
+
+function _dossierCacheGet(plotId) {
+  return _dossierCache.get(plotId) ?? null;
+}
+
+function _dossierCacheSet(plotId, data) {
+  if (_dossierCache.size >= DOSSIER_CACHE_MAX) {
+    // Evict the oldest entry (first key in insertion order)
+    _dossierCache.delete(_dossierCache.keys().next().value);
+  }
+  _dossierCache.set(plotId, data);
+}
+
 const MapEngine = {
   map: null,
   currentBasemap: 'satellite',
@@ -1166,16 +1185,27 @@ const MapEngine = {
         loadingParcelInfo: true
       });
 
-      // 3. Asynchronously hydrate with full Forest Department status and reconciliation data
+      // 3. Hydrate with full parcel detail — check LRU cache first, fetch if missing
       if (plotId) {
-        fetch(`/api/plots/cs/${plotId}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data && data.plot && typeof Dossier !== 'undefined' && Dossier.currentPlotId === plotId) {
-              Dossier.renderCSPlot(data);
-            }
-          })
-          .catch(console.warn);
+        const cached = _dossierCacheGet(plotId);
+        if (cached) {
+          // Instant re-render from memory — zero network latency
+          if (typeof Dossier !== 'undefined' && Dossier.currentPlotId === plotId) {
+            Dossier.renderCSPlot(cached);
+          }
+        } else {
+          fetch(`/api/plots/cs/${plotId}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data && data.plot) {
+                _dossierCacheSet(plotId, data);
+                if (typeof Dossier !== 'undefined' && Dossier.currentPlotId === plotId) {
+                  Dossier.renderCSPlot(data);
+                }
+              }
+            })
+            .catch(console.warn);
+        }
       }
     }
   },

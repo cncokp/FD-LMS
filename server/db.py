@@ -393,6 +393,7 @@ def _build_parcel_dossier_payload(
 def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
     if is_supabase_pg_enabled():
         try:
+            # Step 1: fetch the plot row (need uid before we can query related tables)
             with get_pg_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -400,31 +401,50 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
                     FROM cs_plots WHERE id = %s
                     """, (plot_id,))
                     plot = cur.fetchone()
-                    if not plot:
-                        return None
-                    parcel_records, encroachment_records = [], []
-                    if plot.get("uid"):
-                        cur.execute("""
-                        SELECT cs_uid, rs_uid, range, beat_name, mouza, cs_jl, rs_jl,
-                               cs_plot_no, rs_plot_no, cs_land_acre, total_area,
-                               area_fd, area_others, khatian_no, legal_status, remarks
-                        FROM parcel_info WHERE cs_uid = %s ORDER BY id
-                        """, (plot["uid"],))
-                        parcel_records = [dict(r) for r in cur.fetchall()]
+            if not plot:
+                return None
 
-                        cur.execute("""
-                        SELECT uid, district, upazila, range, beat_name, mouza,
-                               encroacher_name, cs_plot_no, rs_plot_no, rs_khatian,
-                               sec_20, sec_6, encroached_area_acre, structure_type, action_taken
-                        FROM encroachment_info WHERE uid = %s ORDER BY id
-                        """, (str(plot["uid"]),))
-                        encroachment_records = [dict(r) for r in cur.fetchall()]
-                    return _build_parcel_dossier_payload(plot, parcel_records, encroachment_records)
+            uid = plot.get("uid")
+            parcel_records: List[Dict] = []
+            encroachment_records: List[Dict] = []
+
+            if uid:
+                # Step 2: parcel_info + encroachment_info run in PARALLEL (each needs its own connection)
+                def _fetch_parcel(u):
+                    with get_pg_connection() as c:
+                        with c.cursor() as cur:
+                            cur.execute("""
+                            SELECT cs_uid, rs_uid, range, beat_name, mouza, cs_jl, rs_jl,
+                                   cs_plot_no, rs_plot_no, cs_land_acre, total_area,
+                                   area_fd, area_others, khatian_no, legal_status, remarks
+                            FROM parcel_info WHERE cs_uid = %s ORDER BY id
+                            """, (u,))
+                            return [dict(r) for r in cur.fetchall()]
+
+                def _fetch_encroach(u):
+                    with get_pg_connection() as c:
+                        with c.cursor() as cur:
+                            cur.execute("""
+                            SELECT uid, district, upazila, range, beat_name, mouza,
+                                   encroacher_name, cs_plot_no, rs_plot_no, rs_khatian,
+                                   sec_20, sec_6, encroached_area_acre, structure_type, action_taken
+                            FROM encroachment_info WHERE uid = %s ORDER BY id
+                            """, (str(u),))
+                            return [dict(r) for r in cur.fetchall()]
+
+                with ThreadPoolExecutor(max_workers=2) as ex:
+                    fut_parcel   = ex.submit(_fetch_parcel,   uid)
+                    fut_encroach = ex.submit(_fetch_encroach, uid)
+                    parcel_records       = fut_parcel.result()
+                    encroachment_records = fut_encroach.result()
+
+            return _build_parcel_dossier_payload(plot, parcel_records, encroachment_records)
         except Exception as e:
             print(f"Supabase PG dossier error ({e}), trying Cloud API...")
 
     if is_supabase_cloud_enabled():
         try:
+            # Step 1: fetch the plot row
             resp = _supabase_request(
                 f"cs_plots?id=eq.{plot_id}&select=id,uid,plot_no,mouza,jl_no,area_acre,beat_name,minx,miny,maxx,maxy"
             )
@@ -432,19 +452,31 @@ def get_cs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
             if not rows:
                 return None
             plot = rows[0]
-            parcel_records, encroachment_records = [], []
+            parcel_records: List[Dict] = []
+            encroachment_records: List[Dict] = []
+
             if plot.get("uid"):
-                p_resp = _supabase_request(
-                    f"parcel_info?cs_uid=eq.{urllib.parse.quote(str(plot['uid']))}&select=*&order=id"
-                )
-                parcel_records = json.loads(p_resp.read().decode("utf-8"))
-                try:
-                    e_resp = _supabase_request(
-                        f"encroachment_info?uid=eq.{urllib.parse.quote(str(plot['uid']))}&select=*&order=id"
-                    )
-                    encroachment_records = json.loads(e_resp.read().decode("utf-8"))
-                except Exception as ee:
-                    print(f"Encroachment fetch error: {ee}")
+                uid_enc = urllib.parse.quote(str(plot["uid"]))
+
+                # Step 2: parcel_info + encroachment_info run in PARALLEL via HTTP
+                def _fetch_parcel_api():
+                    r = _supabase_request(f"parcel_info?cs_uid=eq.{uid_enc}&select=*&order=id")
+                    return json.loads(r.read().decode("utf-8"))
+
+                def _fetch_encroach_api():
+                    try:
+                        r = _supabase_request(f"encroachment_info?uid=eq.{uid_enc}&select=*&order=id")
+                        return json.loads(r.read().decode("utf-8"))
+                    except Exception as ee:
+                        print(f"Encroachment fetch error: {ee}")
+                        return []
+
+                with ThreadPoolExecutor(max_workers=2) as ex:
+                    fut_parcel   = ex.submit(_fetch_parcel_api)
+                    fut_encroach = ex.submit(_fetch_encroach_api)
+                    parcel_records       = fut_parcel.result()
+                    encroachment_records = fut_encroach.result()
+
             return _build_parcel_dossier_payload(plot, parcel_records, encroachment_records)
         except Exception as e:
             print(f"Supabase Cloud API dossier error: {e}")
