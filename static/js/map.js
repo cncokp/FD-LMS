@@ -321,18 +321,18 @@ const MapEngine = {
   async init() {
     this.map = L.map('map', {
       center: this.defaultParkCenter,
-      zoom: 14.5,
+      zoom: 14,
       minZoom: 10,
       maxZoom: 22,
       zoomControl: false,
       attributionControl: false,
-      fadeAnimation: false,
+      fadeAnimation: true,
       zoomAnimation: true,
-      zoomAnimationThreshold: 8,
-      zoomSnap: 0.25,
-      zoomDelta: 0.5,
-      wheelPxPerZoomLevel: 100,
-      wheelDebounceTime: 40,
+      zoomAnimationThreshold: 4,
+      zoomSnap: 1,
+      zoomDelta: 1,
+      wheelPxPerZoomLevel: 120,
+      wheelDebounceTime: 60,
       preferCanvas: true
     });
 
@@ -532,19 +532,36 @@ const MapEngine = {
       maxZoom: 22,
       maxNativeZoom: 19,
       crossOrigin: true,
-      keepBuffer: 8,
-      updateWhenIdle: false,
-      updateWhenZooming: false
+      keepBuffer: 2,
+      updateWhenIdle: true,
+      updateWhenZooming: false,
+      updateInterval: 150
     };
 
     this.basemapLayers = {
-      satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', tileOptions),
-      hybrid: L.layerGroup([
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', tileOptions),
-        L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { ...tileOptions, opacity: 0.85 })
-      ]),
-      street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { ...tileOptions, maxNativeZoom: 19 }),
-      osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { ...tileOptions, maxNativeZoom: 19 })
+      satellite: L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        ...tileOptions,
+        subdomains: ['0', '1', '2', '3']
+      }),
+      hybrid: L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        ...tileOptions,
+        subdomains: ['0', '1', '2', '3']
+      }),
+      street: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        ...tileOptions,
+        subdomains: ['a', 'b', 'c', 'd'],
+        maxNativeZoom: 19
+      }),
+      esri: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        ...tileOptions,
+        subdomains: ['server', 'services'],
+        maxNativeZoom: 19
+      }),
+      osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        ...tileOptions,
+        subdomains: ['a', 'b', 'c'],
+        maxNativeZoom: 19
+      })
     };
 
     if (!this.basemapLayers[this.currentBasemap]) {

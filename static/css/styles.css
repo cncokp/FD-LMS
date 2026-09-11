@@ -1862,3 +1862,13 @@ input:checked + .slider:before {
     opacity: 0.7;
   }
 }
+
+/* ================= Hardware-Accelerated Basemap Transitions ================= */
+.leaflet-tile {
+  will-change: transform, opacity;
+  image-rendering: auto;
+}
+
+.leaflet-tile-container {
+  will-change: transform;
+}
