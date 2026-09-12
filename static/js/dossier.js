@@ -68,14 +68,14 @@ const Dossier = {
     const effectiveRange = pi && pi.range;
 
     const beatDisplay = effectiveBeat 
-      ? `<i class="fa-solid fa-tree" style="color: #94a3b8; font-size: 11px; margin-right: 6px;"></i><span style="color: #e2e8f0; font-weight: 500;">${effectiveBeat}</span>`
-      : `<span style="color: #64748b; font-style: italic; font-size: 11px;"><i class="fa-solid fa-tree" style="color: #64748b; font-size: 11px; margin-right: 6px;"></i>Not in current survey register</span>`;
+      ? `<i class="fa-solid fa-tree prop-icon"></i><span class="prop-highlight-beat">${effectiveBeat}</span>`
+      : `<span class="prop-dim-italic"><i class="fa-solid fa-tree prop-icon"></i>Not in current survey register</span>`;
 
     const rangeDisplay = effectiveRange
-      ? `<i class="fa-solid fa-mountain-sun" style="color: #94a3b8; font-size: 11px; margin-right: 6px;"></i><span style="color: #e2e8f0; font-weight: 500;">${effectiveRange}</span>`
+      ? `<i class="fa-solid fa-mountain-sun prop-icon"></i><span class="prop-highlight-range">${effectiveRange}</span>`
       : (data.loadingParcelInfo
-          ? `<span style="color: #64748b; font-size: 11px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</span>`
-          : `<span style="color: #64748b; font-style: italic; font-size: 11px;"><i class="fa-solid fa-mountain-sun" style="color: #64748b; font-size: 11px; margin-right: 6px;"></i>Not in current survey register</span>`);
+          ? `<span class="prop-dim"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</span>`
+          : `<span class="prop-dim-italic"><i class="fa-solid fa-mountain-sun prop-icon"></i>Not in current survey register</span>`);
 
     // RS Plots Details Table Section (with Legal Status as last column)
     let rsDetailsHtml = '';
@@ -87,10 +87,10 @@ const Dossier = {
         const othersStr = r.area_others != null ? Number(r.area_others).toFixed(2) : '-';
         return `
           <tr>
-            <td class="mono" style="color: #f8fafc; font-weight: 500;">${r.rs_plot_no || 'N/A'}</td>
-            <td class="mono" style="color: #94a3b8; font-size: 11px;">${r.khatian_no || '-'}</td>
-            <td class="mono" style="text-align: right; color: #e2e8f0;">${fdStr}</td>
-            <td class="mono" style="text-align: right; color: #94a3b8;">${othersStr}</td>
+            <td class="mono td-bold">${r.rs_plot_no || 'N/A'}</td>
+            <td class="mono td-khatian">${r.khatian_no || '-'}</td>
+            <td class="mono td-fd-area">${fdStr}</td>
+            <td class="mono td-muted" style="text-align: right;">${othersStr}</td>
             <td style="text-align: right;"><span class="badge-stat ${badgeClass}">${legal || 'N/A'}</span></td>
           </tr>
         `;
@@ -147,12 +147,12 @@ const Dossier = {
 
         return `
           <tr>
-            <td style="color: #f8fafc; font-weight: 500;">${nameDisplay}</td>
-            <td class="mono" style="color: #cbd5e1;">${r.rs_plot_no || '-'}</td>
-            <td class="mono" style="color: #94a3b8; font-size: 11px;">${r.rs_khatian || '-'}</td>
-            <td class="mono" style="text-align: right; color: #f87171; font-weight: 600;">${areaStr}</td>
-            <td style="color: #e2e8f0; font-size: 11px;">${r.structure_type || '-'}</td>
-            <td style="color: #cbd5e1; font-size: 10.5px;">${actionDisplay}</td>
+            <td class="td-encroacher">${nameDisplay}</td>
+            <td class="mono td-bold">${r.rs_plot_no || '-'}</td>
+            <td class="mono td-khatian">${r.rs_khatian || '-'}</td>
+            <td class="mono td-danger" style="text-align: right;">${areaStr}</td>
+            <td class="td-structure">${r.structure_type || '-'}</td>
+            <td class="td-action">${actionDisplay}</td>
           </tr>
         `;
       }).join('');
@@ -160,9 +160,9 @@ const Dossier = {
       encroachHtml = `
         <!-- Encroachment Details Card -->
         <div class="dossier-card card-encroach">
-          <div class="dossier-card-title" style="color: #f87171;">
+          <div class="dossier-card-title">
             <span style="display: flex; align-items: center; gap: 6px;">
-              <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i>
+              <i class="fa-solid fa-triangle-exclamation"></i>
               <span>Encroachment Details</span>
             </span>
             <span class="badge-stat-danger">${enc.count} Cases &bull; ${enc.total_encroached_acre.toFixed(2)} Ac</span>
@@ -197,42 +197,42 @@ const Dossier = {
         <div class="dossier-grid">
           <div class="dossier-prop">
             <span class="prop-label">Plot Number</span>
-            <span class="prop-val mono" style="font-size: 14px; font-weight: 600; color: #f8fafc;">
+            <span class="prop-val mono prop-bold">
               ${displayPlotNo}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">Total Area</span>
-            <span class="prop-val mono" style="font-size: 14px; font-weight: 600; color: #f8fafc;">
+            <span class="prop-val mono prop-bold">
               ${areaFormatted}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">FD Owned Area</span>
-            <span class="prop-val mono" style="font-size: 13px; color: #e2e8f0;">
+            <span class="prop-val mono prop-fd-area">
               ${fdAreaFormatted}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">Other / Private Area</span>
-            <span class="prop-val mono" style="font-size: 13px; color: #94a3b8;">
+            <span class="prop-val mono prop-muted">
               ${othersAreaFormatted}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">Mouza</span>
-            <span class="prop-val" style="font-size: 13px; color: #e2e8f0;">
+            <span class="prop-val prop-bold">
               ${displayMouza}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">JL No</span>
-            <span class="prop-val mono" style="font-size: 13px; color: #94a3b8;">
+            <span class="prop-val mono prop-muted">
               ${displayJl}
             </span>
           </div>
@@ -257,9 +257,9 @@ const Dossier = {
       ${encroachHtml}
 
       <!-- Quick Actions -->
-      <div style="margin-top: 4px;">
-        <button class="btn btn-outline" style="width: 100%; height: 30px; font-size: 11px; justify-content: center; gap: 6px; color: #94a3b8; border-color: rgba(255,255,255,0.08);" onclick="window.print()">
-          <i class="fa-solid fa-print" style="font-size: 10.5px;"></i> Print Details
+      <div style="margin-top: 6px;">
+        <button class="btn btn-outline btn-print-dossier" onclick="window.print()">
+          <i class="fa-solid fa-print"></i> Print Details
         </button>
       </div>
     `;
@@ -282,8 +282,8 @@ const Dossier = {
       : '0.00 Ac';
 
     const beatDisplay = p.beat_name 
-      ? `<i class="fa-solid fa-tree" style="color: #94a3b8; font-size: 11px; margin-right: 6px;"></i><span style="color: #e2e8f0; font-weight: 500;">${p.beat_name}</span>`
-      : `<span style="color: #64748b; font-style: italic; font-size: 11px;"><i class="fa-solid fa-tree" style="color: #64748b; font-size: 11px; margin-right: 6px;"></i>Pending separate dataset</span>`;
+      ? `<i class="fa-solid fa-tree prop-icon"></i><span class="prop-highlight-beat">${p.beat_name}</span>`
+      : `<span class="prop-dim-italic"><i class="fa-solid fa-tree prop-icon"></i>Pending separate dataset</span>`;
 
     let html = `
       <!-- Parcel Identification Card -->
@@ -294,28 +294,28 @@ const Dossier = {
         <div class="dossier-grid">
           <div class="dossier-prop">
             <span class="prop-label">Plot Number</span>
-            <span class="prop-val mono" style="font-size: 14px; font-weight: 600; color: #f8fafc;">
+            <span class="prop-val mono prop-bold">
               ${p.plot_no || 'N/A'}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">Total Area</span>
-            <span class="prop-val mono" style="font-size: 14px; font-weight: 600; color: #f8fafc;">
+            <span class="prop-val mono prop-bold">
               ${areaFormatted}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">Mouza</span>
-            <span class="prop-val" style="font-size: 13px; color: #e2e8f0;">
+            <span class="prop-val prop-bold">
               ${p.mouza || 'N/A'}
             </span>
           </div>
 
           <div class="dossier-prop">
             <span class="prop-label">JL No</span>
-            <span class="prop-val mono" style="font-size: 13px; color: #94a3b8;">
+            <span class="prop-val mono prop-muted">
               ${p.jl_no || 'N/A'}
             </span>
           </div>
@@ -330,9 +330,9 @@ const Dossier = {
       </div>
 
       <!-- Quick Actions -->
-      <div style="margin-top: 4px;">
-        <button class="btn btn-outline" style="width: 100%; height: 30px; font-size: 11px; justify-content: center; gap: 6px; color: #94a3b8; border-color: rgba(255,255,255,0.08);" onclick="window.print()">
-          <i class="fa-solid fa-print" style="font-size: 10.5px;"></i> Print Details
+      <div style="margin-top: 6px;">
+        <button class="btn btn-outline btn-print-dossier" onclick="window.print()">
+          <i class="fa-solid fa-print"></i> Print Details
         </button>
       </div>
     `;
