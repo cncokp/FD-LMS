@@ -26,7 +26,10 @@ import gzip
 import hashlib
 
 CACHE_DIR = os.path.join(BASE_DIR, "data", "cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
+try:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+except OSError:
+    pass
 
 # In-memory cached JSON bytes and pre-compressed GZip bytes with ETags
 _cs_cache_bytes: Optional[bytes] = None

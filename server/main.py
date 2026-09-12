@@ -23,7 +23,10 @@ from server import db, auth, admin_db, uploader
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 ADMIN_STATIC_DIR = os.path.join(STATIC_DIR, "admin")
-os.makedirs(ADMIN_STATIC_DIR, exist_ok=True)
+try:
+    os.makedirs(ADMIN_STATIC_DIR, exist_ok=True)
+except OSError:
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +113,30 @@ def get_stats():
 
 
 @app.get("/api/mouzas")
+@app.get("/api/mouza-boundaries")
 def get_mouzas():
     return db.get_mouza_boundaries()
+
+
+@app.get("/api/beats/geojson")
+@app.get("/api/boundaries/beats")
+def get_beat_boundaries():
+    path = os.path.join(STATIC_DIR, "data", "beat_boundaries.geojson")
+    if os.path.exists(path):
+        return FileResponse(path, media_type="application/json")
+    raise HTTPException(status_code=404, detail="Beat boundaries not found")
+
+
+@app.get("/api/plots")
+@app.get("/api/plots/rs")
+def get_plots(
+    bbox: Optional[str] = Query(None, description="minx,miny,maxx,maxy in EPSG:4326"),
+    plot_no: Optional[str] = Query(None),
+    uid: Optional[str] = Query(None),
+    limit: int = Query(35000, le=50000)
+):
+    json_bytes = db.get_rs_plots_json_bytes(bbox=bbox, plot_no=plot_no, uid=uid, limit=limit)
+    return Response(content=json_bytes, media_type="application/json")
 
 
 @app.get("/api/plots/cs")
@@ -163,6 +188,7 @@ def get_encroachments_summary():
     return db.get_encroachment_summary()
 
 
+@app.get("/api/plots/cs/{plot_id}")
 @app.get("/api/cs_plots/{plot_id}/dossier")
 def get_cs_plot_dossier(plot_id: int):
     dossier = db.get_cs_plot_dossier(plot_id)

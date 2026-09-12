@@ -9,7 +9,10 @@ import io
 import csv
 import re
 from typing import Dict, Any, List, Tuple, Optional
-import openpyxl
+try:
+    import openpyxl
+except ImportError:
+    openpyxl = None
 
 try:
     from server import admin_db, db
@@ -118,6 +121,8 @@ def parse_file_data(file_bytes: bytes, filename: str) -> Tuple[List[str], List[D
     rows: List[Dict[str, Any]] = []
 
     if fn.endswith(".xlsx") or fn.endswith(".xlsm") or fn.endswith(".xltx"):
+        if openpyxl is None:
+            raise RuntimeError("Excel parsing module (openpyxl) is not available. Please upload a CSV file instead.")
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
         sheet = wb.active
         all_rows = list(sheet.iter_rows(values_only=True))

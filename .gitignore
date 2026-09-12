@@ -21,6 +21,7 @@ DB/
 
 # GIS Lock files & temporary files
 *.lock
+!uv.lock
 *.sr.lock
 *.tmp
 
