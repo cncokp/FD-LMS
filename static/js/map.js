@@ -965,8 +965,7 @@ const MapEngine = {
         const p = feat.properties || {};
         const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
         const hasBulkMatch = Boolean(_bulkDossierRsMap && rUid && _bulkDossierRsMap[rUid]);
-        const hasBeat = Boolean(p.beat_name && p.beat_name.trim());
-        if (hasBulkMatch || hasBeat) {
+        if (hasBulkMatch || (!_bulkDossierRsMap && Boolean(p.beat_name && p.beat_name.trim()))) {
           forestRsFeatures.push(feat);
         }
       }
@@ -1152,10 +1151,18 @@ const MapEngine = {
 
   toggleAllPlots(visible, mutual = true) {
     this.isAllPlotsVisible = visible;
+    const csToggle = document.getElementById('toggleAllPlots');
+    if (csToggle && csToggle.checked !== visible) {
+      csToggle.checked = visible;
+    }
+
     if (visible) {
       this.activeSurveyMode = 'cs';
       if (!this.map.hasLayer(this.layers.allPlots)) {
         this.map.addLayer(this.layers.allPlots);
+      }
+      if (this.canvasRenderer && this.canvasRenderer._map) {
+        this.canvasRenderer._update();
       }
       if (mutual && this.isRsPlotsVisible) {
         const rsToggle = document.getElementById('toggleRsPlots');
@@ -1165,6 +1172,11 @@ const MapEngine = {
     } else {
       if (this.map.hasLayer(this.layers.allPlots)) {
         this.map.removeLayer(this.layers.allPlots);
+      }
+      if (mutual && !this.isRsPlotsVisible) {
+        const rsToggle = document.getElementById('toggleRsPlots');
+        if (rsToggle) rsToggle.checked = true;
+        this.toggleRsPlots(true, false);
       }
       if (this.isRsPlotsVisible) {
         this.activeSurveyMode = 'rs';
@@ -1197,21 +1209,26 @@ const MapEngine = {
   },
 
   async loadRSPlots() {
-    const CACHE_KEY = 'rs_plots_v2';
+    const CACHE_KEY = 'rs_plots_v4';
     const CACHE_TTL = 86400 * 1000;
 
     let cachedData = null;
     try {
       const cached = await SpatialCache.get(CACHE_KEY);
-      if (cached && cached.data && cached.data.features) {
+      if (cached && cached.data && Array.isArray(cached.data.features) && cached.data.features.length > 0) {
         cachedData = cached.data;
         this.rawRSData = cachedData;
         this.renderRSPlotsGeoJSON(this.rawRSData);
         if (cached._ts && (Date.now() - cached._ts) < CACHE_TTL) return;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('RS cache lookup skipped:', e);
+    }
 
     try {
+      if (this.isRsPlotsVisible && !cachedData) {
+        this.showLoading('Streaming RS Cadastral Parcels...');
+      }
       const res = await fetch('/api/plots/rs?limit=35000');
       const rsData = await res.json();
       if (rsData && rsData.features && rsData.features.length > 0) {
@@ -1221,6 +1238,10 @@ const MapEngine = {
       }
     } catch (e) {
       console.warn("Failed to load RS plots:", e);
+    } finally {
+      if (this.isRsPlotsVisible && !cachedData) {
+        this.hideLoading();
+      }
     }
   },
 
@@ -1265,7 +1286,13 @@ const MapEngine = {
     this.geoLayers.rsPlots = rsGeoLayer;
     rsGeoLayer.addTo(this.layers.rsPlots);
 
-    if (this.isRsPlotsVisible && !this.isAllPlotsVisible) {
+    if (this.isRsPlotsVisible) {
+      if (!this.map.hasLayer(this.layers.rsPlots)) {
+        this.map.addLayer(this.layers.rsPlots);
+      }
+      if (this.canvasRenderer && this.canvasRenderer._map) {
+        this.canvasRenderer._update();
+      }
       this.updateForestLandLayer();
       this.updateEncroachedParcelsLayer();
       this.updateLabels();
@@ -1274,13 +1301,23 @@ const MapEngine = {
 
   async toggleRsPlots(visible, mutual = true) {
     this.isRsPlotsVisible = visible;
+    const rsToggle = document.getElementById('toggleRsPlots');
+    if (rsToggle && rsToggle.checked !== visible) {
+      rsToggle.checked = visible;
+    }
+
     if (visible) {
       this.activeSurveyMode = 'rs';
       if (!this.rawRSData || !this.rawRSData.features || !this.rawRSData.features.length) {
+        this.showLoading('Streaming RS Cadastral Parcels...');
         await this.loadRSPlots();
+        this.hideLoading();
       }
       if (!this.map.hasLayer(this.layers.rsPlots)) {
         this.map.addLayer(this.layers.rsPlots);
+      }
+      if (this.canvasRenderer && this.canvasRenderer._map) {
+        this.canvasRenderer._update();
       }
       if (mutual && this.isAllPlotsVisible) {
         const csToggle = document.getElementById('toggleAllPlots');
@@ -1290,6 +1327,11 @@ const MapEngine = {
     } else {
       if (this.map.hasLayer(this.layers.rsPlots)) {
         this.map.removeLayer(this.layers.rsPlots);
+      }
+      if (mutual && !this.isAllPlotsVisible) {
+        const csToggle = document.getElementById('toggleAllPlots');
+        if (csToggle) csToggle.checked = true;
+        this.toggleAllPlots(true, false);
       }
       if (this.isAllPlotsVisible) {
         this.activeSurveyMode = 'cs';
