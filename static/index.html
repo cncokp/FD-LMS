@@ -28,8 +28,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 
+  <!-- Instant Theme Initialization (prevents FOUC) -->
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('fd_lms_theme');
+        if (t === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260912_07" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260912_08" />
 
 </head>
 <body>
@@ -45,6 +59,12 @@
           <div class="brand-title-tertiary">Government of the People's Republic of Bangladesh</div>
         </div>
         <img src="/static/gob_logo.svg" alt="Government of Bangladesh Logo" class="brand-logo-img brand-logo-right" />
+      </div>
+      <div class="nav-actions">
+        <button class="theme-toggle-btn" id="btnThemeToggle" title="Switch Theme (Light/Dark)" aria-label="Switch Theme">
+          <i class="fa-solid fa-sun icon-sun"></i>
+          <i class="fa-solid fa-moon icon-moon"></i>
+        </button>
       </div>
     </header>
 
@@ -323,8 +343,8 @@
   </script>
   <!-- Leaflet & App Scripts — defer keeps HTML parsing non-blocking; order is preserved -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-  <script src="/static/js/dossier.js?v=20260912_07" defer></script>
-  <script src="/static/js/map.js?v=20260912_07" defer></script>
-  <script src="/static/js/app.js?v=20260912_07" defer></script>
+  <script src="/static/js/dossier.js?v=20260912_08" defer></script>
+  <script src="/static/js/map.js?v=20260912_08" defer></script>
+  <script src="/static/js/app.js?v=20260912_08" defer></script>
 </body>
 </html>

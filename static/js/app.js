@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await MapEngine.init();
 
   // 2. Setup UI controls
+  setupThemeSwitcher();
   setupHorizontalWidget();
   setupBasemapSwitcher();
   setupLayerToggles();
@@ -648,3 +649,37 @@ function setupExportCSV() {
     window.location.href = `/api/export/csv`;
   });
 }
+
+function setupThemeSwitcher() {
+  const btnThemeToggle = document.getElementById('btnThemeToggle');
+  if (!btnThemeToggle) return;
+
+  const getStoredTheme = () => {
+    try {
+      return localStorage.getItem('fd_lms_theme') || 'dark';
+    } catch (e) {
+      return 'dark';
+    }
+  };
+
+  const applyTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem('fd_lms_theme', theme);
+    } catch (e) {}
+
+    const isLight = theme === 'light';
+    btnThemeToggle.setAttribute('title', isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme');
+    btnThemeToggle.setAttribute('aria-label', isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme');
+  };
+
+  // Sync state on load
+  applyTheme(getStoredTheme());
+
+  btnThemeToggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+    applyTheme(nextTheme);
+  });
+}
+
