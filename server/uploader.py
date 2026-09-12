@@ -45,13 +45,15 @@ def clean_float(val: Any) -> Optional[float]:
 # Canonical aliases for automatic detection
 COLUMN_ALIASES: Dict[str, List[str]] = {
     "cs_uid": [
-        "cs_uid", "csuid", "cs uid", "সিএস ইউআইডি", "সিএস_ইউআইডি"
+        "cs_uid", "csuid", "cs uid", "uid", "uid1", "cs_id",
+        "সিএস ইউআইডি", "সিএস_ইউআইডি", "ইউআইডি", "ইউআইডি ১", "ইউআইডি_১"
     ],
     "rs_uid": [
-        "rs_uid", "rsuid", "rs uid", "আরএস ইউআইডি", "আরএস_ইউআইডি"
+        "rs_uid", "rsuid", "rs uid", "uid2", "rs_id",
+        "আরএস ইউআইডি", "আরএস_ইউআইডি", "ইউআইডি২", "ইউআইডি ২", "ইউআইডি_২"
     ],
     "uid": [
-        "uid", "id_code", "ইউআইডি", "কোড"
+        "uid", "cs_uid", "csuid", "id_code", "ইউআইডি", "কোড"
     ],
     "cs_plot_no": [
         "cs_plot_no", "cs_plot", "cs plot", "cs_darg", "cs_dag",
@@ -318,6 +320,21 @@ def detect_mapping(headers: List[str], target_table: str) -> Tuple[Dict[str, str
 
     for header in headers:
         norm = header.strip().lower()
+
+        # Direct explicit recognition of UID and UID2
+        if norm in ("uid", "uid1"):
+            if "cs_uid" in valid_fields:
+                mapping[header] = "cs_uid"
+                continue
+            elif "uid" in valid_fields:
+                mapping[header] = "uid"
+                continue
+
+        if norm in ("uid2", "uid_2"):
+            if "rs_uid" in valid_fields:
+                mapping[header] = "rs_uid"
+                continue
+
         if norm in valid_fields:
             mapping[header] = norm
             continue
@@ -345,6 +362,18 @@ def map_row_to_schema(
     for orig_col, target_field in column_mapping.items():
         if orig_col in raw_row:
             mapped[target_field] = raw_row[orig_col]
+
+    # Direct fallback for UID (CS UID) and UID2 (RS UID) from raw incoming data
+    raw_uid = raw_row.get("UID") or raw_row.get("uid") or raw_row.get("cs_uid") or raw_row.get("CS_UID")
+    raw_uid2 = raw_row.get("UID2") or raw_row.get("uid2") or raw_row.get("rs_uid") or raw_row.get("RS_UID")
+
+    if raw_uid is not None and not mapped.get("cs_uid") and "cs_uid" in admin_db.TABLE_FIELDS.get(target_table, []):
+        mapped["cs_uid"] = clean_int_str(raw_uid)
+    if raw_uid is not None and not mapped.get("uid") and "uid" in admin_db.TABLE_FIELDS.get(target_table, []):
+        mapped["uid"] = clean_int_str(raw_uid)
+
+    if raw_uid2 is not None and not mapped.get("rs_uid") and "rs_uid" in admin_db.TABLE_FIELDS.get(target_table, []):
+        mapped["rs_uid"] = clean_int_str(raw_uid2)
 
     # Numeric fields
     for fld in ["area_fd", "area_others", "total_area", "cs_land_acre", "encroached_area_acre", "area_acre"]:
@@ -378,24 +407,33 @@ def map_row_to_schema(
             else:
                 mapped[str_field] = val_str
 
-    # Synthesize UID if needed
-    jl = mapped.get("cs_jl") or mapped.get("jl_no") or mapped.get("rs_jl") or "0"
-    pno = mapped.get("cs_plot_no") or mapped.get("plot_no") or mapped.get("rs_plot_no") or ""
-    if pno and jl:
-        gen_uid = f"{jl}{pno}"
+    # Synthesize CS UID if missing
+    cs_jl = mapped.get("cs_jl") or mapped.get("jl_no") or ""
+    cs_plot = mapped.get("cs_plot_no") or (mapped.get("plot_no") if target_table in ("cs_plots", "parcel_info") else "")
+    if cs_jl and cs_plot:
+        gen_cs_uid = f"{cs_jl}{cs_plot}"
         if "cs_uid" in admin_db.TABLE_FIELDS.get(target_table, []):
-            mapped.setdefault("cs_uid", gen_uid)
-        if "rs_uid" in admin_db.TABLE_FIELDS.get(target_table, []):
-            mapped.setdefault("rs_uid", gen_uid)
+            mapped.setdefault("cs_uid", gen_cs_uid)
         if "uid" in admin_db.TABLE_FIELDS.get(target_table, []):
-            mapped.setdefault("uid", gen_uid)
+            mapped.setdefault("uid", gen_cs_uid)
 
-    # Sync uid & cs_uid in encroachment_info
-    if target_table == "encroachment_info":
-        if "uid" in mapped and not mapped.get("cs_uid"):
-            mapped["cs_uid"] = mapped["uid"]
-        elif "cs_uid" in mapped and not mapped.get("uid"):
-            mapped["uid"] = mapped["cs_uid"]
+    # Synthesize RS UID if missing
+    rs_jl = mapped.get("rs_jl") or mapped.get("jl_no") or cs_jl or ""
+    rs_plot = mapped.get("rs_plot_no") or (mapped.get("plot_no") if target_table in ("rs_plots",) else "")
+    if rs_jl and rs_plot:
+        gen_rs_uid = f"{rs_jl}{rs_plot}"
+        if "rs_uid" in admin_db.TABLE_FIELDS.get(target_table, []):
+            mapped.setdefault("rs_uid", gen_rs_uid)
+
+    # Sync uid & cs_uid in parcel_info and encroachment_info
+    if mapped.get("cs_uid") and not mapped.get("uid"):
+        mapped["uid"] = mapped["cs_uid"]
+    elif mapped.get("uid") and not mapped.get("cs_uid"):
+        mapped["cs_uid"] = mapped["uid"]
+
+    # Sync rs_uid & uid2
+    if mapped.get("rs_uid") and not mapped.get("uid2"):
+        mapped["uid2"] = mapped["rs_uid"]
 
     return mapped
 

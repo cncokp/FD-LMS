@@ -53,7 +53,7 @@
         { name: 'jl_no', label: 'CS JL No', type: 'text' },
         { name: 'beat_name', label: 'Beat Name', type: 'text', required: true },
         { name: 'area_acre', label: 'Calculated Area (Acres)', type: 'number', step: '0.0001' },
-        { name: 'uid', label: 'Unique Identifier (UID)', type: 'text' }
+        { name: 'uid', label: 'CS UID (UID)', type: 'text' }
       ]
     },
     rs_plots: {
@@ -66,7 +66,7 @@
         { name: 'jl_no', label: 'RS JL No', type: 'text' },
         { name: 'beat_name', label: 'Beat Name', type: 'text', required: true },
         { name: 'area_acre', label: 'Calculated Area (Acres)', type: 'number', step: '0.0001' },
-        { name: 'rs_uid', label: 'RS UID', type: 'text' }
+        { name: 'rs_uid', label: 'RS UID (UID2)', type: 'text' }
       ]
     },
     parcel_info: {
@@ -76,8 +76,8 @@
       fields: [
         { name: 'cs_plot_no', label: 'CS Plot No', type: 'text', required: true },
         { name: 'rs_plot_no', label: 'RS Plot No', type: 'text' },
-        { name: 'cs_uid', label: 'CS UID', type: 'text' },
-        { name: 'rs_uid', label: 'RS UID', type: 'text' },
+        { name: 'cs_uid', label: 'CS UID (UID)', type: 'text' },
+        { name: 'rs_uid', label: 'RS UID (UID2)', type: 'text' },
         { name: 'mouza', label: 'Mouza', type: 'text', required: true },
         { name: 'cs_jl', label: 'CS JL No', type: 'text' },
         { name: 'rs_jl', label: 'RS JL No', type: 'text' },
@@ -99,8 +99,8 @@
         { name: 'encroacher_name', label: 'Encroacher Name & Address', type: 'text', required: true },
         { name: 'cs_plot_no', label: 'CS Plot No', type: 'text', required: true },
         { name: 'rs_plot_no', label: 'RS Plot No', type: 'text' },
-        { name: 'cs_uid', label: 'CS UID', type: 'text' },
-        { name: 'rs_uid', label: 'RS UID', type: 'text' },
+        { name: 'cs_uid', label: 'CS UID (UID)', type: 'text' },
+        { name: 'rs_uid', label: 'RS UID (UID2)', type: 'text' },
         { name: 'encroached_area_acre', label: 'Encroached Area (Acres)', type: 'number', step: '0.0001', required: true },
         { name: 'structure_type', label: 'Structure / Land Use Type', type: 'text' },
         { name: 'action_taken', label: 'Action Taken / Legal Case', type: 'text' },
@@ -632,6 +632,11 @@
         meta.fields.forEach(f => {
           let val = row[f.name];
           if (val === null || val === undefined || val === '') {
+            if (f.name === 'cs_uid') val = row.uid;
+            else if (f.name === 'rs_uid') val = row.uid2;
+            else if (f.name === 'uid') val = row.cs_uid;
+          }
+          if (val === null || val === undefined || val === '') {
             val = '<span class="text-muted">-</span>';
           } else if (f.name === 'legal_status') {
             val = `<span class="badge badge-info">${val}</span>`;
@@ -714,7 +719,12 @@
     let html = '';
 
     meta.fields.forEach(f => {
-      const val = record[f.name] !== undefined && record[f.name] !== null ? record[f.name] : '';
+      let val = record[f.name] !== undefined && record[f.name] !== null ? record[f.name] : '';
+      if (val === '') {
+        if (f.name === 'cs_uid') val = record.uid || '';
+        else if (f.name === 'rs_uid') val = record.uid2 || '';
+        else if (f.name === 'uid') val = record.cs_uid || '';
+      }
       const stepAttr = f.step ? `step="${f.step}"` : '';
       const reqAttr = f.required ? 'required' : '';
 

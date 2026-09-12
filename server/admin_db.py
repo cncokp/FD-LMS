@@ -53,100 +53,170 @@ _snapshot_records: Dict[str, List[Dict[str, Any]]] = {}
 def _init_snapshot_records_if_needed():
     global _snapshot_records
     if "parcel_info" in _snapshot_records and _snapshot_records["parcel_info"]:
-        return
+        # If records in memory already have rs_uid, avoid re-init
+        if any(r.get("rs_uid") for r in _snapshot_records["parcel_info"][:50]):
+            return
 
-    # Load from bulk_dossier.json.gz
-    dossier_bytes = db.get_bulk_dossier_json_bytes()
     parcels: List[Dict[str, Any]] = []
     encroachments: List[Dict[str, Any]] = []
-    
-    p_id = 1
-    e_id = 1
-    try:
-        data = json.loads(dossier_bytes.decode("utf-8"))
-        by_uid = data.get("by_uid", {})
-        for uid, val in by_uid.items():
-            if not isinstance(val, dict):
-                continue
-            
-            # Extract parcel info
-            cs_plot_no = val.get("cs_plot_no") or ""
-            mouza = val.get("mouza") or ""
-            cs_jl = val.get("cs_jl") or ""
-            beat_name = val.get("beat_name") or ""
-            range_name = val.get("range") or ""
-            total_area = val.get("total_area")
-            area_fd = val.get("total_area_fd")
-            area_others = val.get("total_area_others")
-            khatian_no = val.get("khatian_no")
-            legal_status = val.get("legal_status")
-            remarks = val.get("remarks")
+    loaded_from_live = False
 
-            linked_rs = val.get("linked_rs_plots") or []
-            if linked_rs:
-                for rs in linked_rs:
+    # 1. Attempt to load live records directly from Supabase Cloud
+    if db.is_supabase_cloud_enabled():
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            chunks = [(0, 999), (1000, 1999), (2000, 2999), (3000, 3999)]
+            def _fetch_c(c):
+                r = db._supabase_request("parcel_info?select=*&order=id.asc", headers_extra={"Range": f"{c[0]}-{c[1]}"})
+                return json.loads(r.read().decode("utf-8"))
+
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                fetched_parcels = [r for sub in ex.map(_fetch_c, chunks) for r in sub]
+
+            for r in fetched_parcels:
+                c_uid = str(r.get("cs_uid") or r.get("uid") or "").strip()
+                r_uid = str(r.get("rs_uid") or r.get("uid2") or "").strip()
+                if not c_uid and r.get("cs_jl") and r.get("cs_plot_no"):
+                    c_uid = f"{r['cs_jl']}{r['cs_plot_no']}"
+                if not r_uid and r.get("rs_jl") and r.get("rs_plot_no"):
+                    r_uid = f"{r['rs_jl']}{r['rs_plot_no']}"
+                if not c_uid and not r_uid and not r.get("cs_plot_no") and not r.get("rs_plot_no"):
+                    continue
+                r["cs_uid"] = c_uid
+                r["uid"] = c_uid
+                r["rs_uid"] = r_uid
+                r["uid2"] = r_uid
+                parcels.append(r)
+
+            # Encroachments
+            er = db._supabase_request("encroachment_info?select=*&order=id.asc&limit=1000")
+            fetched_enc = json.loads(er.read().decode("utf-8"))
+            for e in fetched_enc:
+                u = str(e.get("cs_uid") or e.get("uid") or "").strip()
+                cp = str(e.get("cs_plot_no") or "").strip()
+                rp = str(e.get("rs_plot_no") or "").strip()
+                r_uid = str(e.get("rs_uid") or e.get("uid2") or "").strip()
+                if not r_uid:
+                    jl = u[:-len(cp)] if (u and cp and u.endswith(cp)) else ""
+                    if jl and rp:
+                        r_uid = f"{jl}{rp}"
+                e["cs_uid"] = u
+                e["uid"] = u
+                e["rs_uid"] = r_uid
+                e["uid2"] = r_uid
+                encroachments.append(e)
+
+            loaded_from_live = bool(parcels)
+        except Exception as e:
+            print(f"[AdminDB] Error loading from Supabase Cloud: {e}, falling back to snapshot...")
+
+    # 2. Fallback to bulk_dossier.json.gz snapshot if offline
+    if not loaded_from_live:
+        dossier_bytes = db.get_bulk_dossier_json_bytes()
+        p_id = 1
+        e_id = 1
+        try:
+            data = json.loads(dossier_bytes.decode("utf-8"))
+            by_uid = data.get("by_uid", {})
+            for uid, val in by_uid.items():
+                if not isinstance(val, dict):
+                    continue
+
+                cs_plot_no = val.get("cs_plot_no") or ""
+                mouza = val.get("mouza") or ""
+                cs_jl = val.get("cs_jl") or ""
+                beat_name = val.get("beat_name") or ""
+                range_name = val.get("range") or ""
+                total_area = val.get("total_area")
+                area_fd = val.get("total_area_fd")
+                area_others = val.get("total_area_others")
+                khatian_no = val.get("khatian_no")
+                legal_status = val.get("legal_status")
+                remarks = val.get("remarks")
+
+                linked_rs = val.get("linked_rs_plots") or []
+                if linked_rs:
+                    for rs in linked_rs:
+                        r_uid = str(rs.get("rs_uid") or rs.get("uid2") or "").strip()
+                        if not r_uid and rs.get("rs_jl") and rs.get("rs_plot_no"):
+                            r_uid = f"{rs.get('rs_jl')}{rs.get('rs_plot_no')}"
+                        parcels.append({
+                            "id": p_id,
+                            "cs_uid": uid,
+                            "uid": uid,
+                            "rs_uid": r_uid,
+                            "uid2": r_uid,
+                            "range": range_name,
+                            "beat_name": beat_name,
+                            "mouza": mouza,
+                            "cs_jl": cs_jl,
+                            "rs_jl": rs.get("rs_jl") or "",
+                            "cs_plot_no": cs_plot_no,
+                            "rs_plot_no": rs.get("rs_plot_no") or "",
+                            "cs_land_acre": total_area,
+                            "total_area": rs.get("total_area") or total_area,
+                            "area_fd": rs.get("area_fd") or area_fd,
+                            "area_others": rs.get("area_others") or area_others,
+                            "khatian_no": rs.get("khatian_no") or khatian_no,
+                            "legal_status": rs.get("legal_status") or legal_status,
+                            "remarks": rs.get("remarks") or remarks,
+                        })
+                        p_id += 1
+                else:
                     parcels.append({
                         "id": p_id,
                         "cs_uid": uid,
+                        "uid": uid,
                         "rs_uid": "",
+                        "uid2": "",
                         "range": range_name,
                         "beat_name": beat_name,
                         "mouza": mouza,
                         "cs_jl": cs_jl,
-                        "rs_jl": rs.get("rs_jl") or "",
+                        "rs_jl": "",
                         "cs_plot_no": cs_plot_no,
-                        "rs_plot_no": rs.get("rs_plot_no") or "",
+                        "rs_plot_no": "",
                         "cs_land_acre": total_area,
-                        "total_area": rs.get("total_area") or total_area,
-                        "area_fd": rs.get("area_fd") or area_fd,
-                        "area_others": rs.get("area_others") or area_others,
-                        "khatian_no": rs.get("khatian_no") or khatian_no,
-                        "legal_status": rs.get("legal_status") or legal_status,
-                        "remarks": rs.get("remarks") or remarks,
+                        "total_area": total_area,
+                        "area_fd": area_fd,
+                        "area_others": area_others,
+                        "khatian_no": khatian_no,
+                        "legal_status": legal_status,
+                        "remarks": remarks,
                     })
                     p_id += 1
-            else:
-                parcels.append({
-                    "id": p_id,
-                    "cs_uid": uid,
-                    "rs_uid": "",
-                    "range": range_name,
-                    "beat_name": beat_name,
-                    "mouza": mouza,
-                    "cs_jl": cs_jl,
-                    "rs_jl": "",
-                    "cs_plot_no": cs_plot_no,
-                    "rs_plot_no": "",
-                    "cs_land_acre": total_area,
-                    "total_area": total_area,
-                    "area_fd": area_fd,
-                    "area_others": area_others,
-                    "khatian_no": khatian_no,
-                    "legal_status": legal_status,
-                    "remarks": remarks,
-                })
-                p_id += 1
 
-            # Extract encroachment info
-            enc_data = val.get("encroachment") or {}
-            enc_records = enc_data.get("records") or []
-            for er in enc_records:
-                encroachments.append({
-                    "id": e_id,
-                    "uid": uid,
-                    "encroacher_name": er.get("encroacher_name") or "",
-                    "cs_plot_no": cs_plot_no,
-                    "rs_plot_no": er.get("rs_plot_no") or "",
-                    "rs_khatian": er.get("rs_khatian") or "",
-                    "sec_20": er.get("sec_20") or "",
-                    "sec_6": er.get("sec_6") or "",
-                    "encroached_area_acre": er.get("encroached_area_acre") or 0.0,
-                    "structure_type": er.get("structure_type") or "",
-                    "action_taken": er.get("action_taken") or "",
-                })
-                e_id += 1
-    except Exception as e:
-        print(f"[AdminDB] Error loading dossier for snapshot records: {e}")
+                # Extract encroachment info
+                enc_data = val.get("encroachment") or {}
+                enc_records = enc_data.get("records") or []
+                for er in enc_records:
+                    c_uid = str(er.get("cs_uid") or er.get("uid") or uid).strip()
+                    cp = er.get("cs_plot_no") or cs_plot_no
+                    rp = er.get("rs_plot_no") or ""
+                    r_uid = str(er.get("rs_uid") or er.get("uid2") or "").strip()
+                    if not r_uid:
+                        jl = c_uid[:-len(cp)] if (c_uid and cp and c_uid.endswith(cp)) else ""
+                        if jl and rp:
+                            r_uid = f"{jl}{rp}"
+                    encroachments.append({
+                        "id": e_id,
+                        "uid": c_uid,
+                        "cs_uid": c_uid,
+                        "rs_uid": r_uid,
+                        "uid2": r_uid,
+                        "encroacher_name": er.get("encroacher_name") or "",
+                        "cs_plot_no": cp,
+                        "rs_plot_no": rp,
+                        "rs_khatian": er.get("rs_khatian") or "",
+                        "sec_20": er.get("sec_20") or "",
+                        "sec_6": er.get("sec_6") or "",
+                        "encroached_area_acre": er.get("encroached_area_acre") or 0.0,
+                        "structure_type": er.get("structure_type") or "",
+                        "action_taken": er.get("action_taken") or "",
+                    })
+                    e_id += 1
+        except Exception as e:
+            print(f"[AdminDB] Error loading dossier for snapshot records: {e}")
 
     # Load cs_plots from cs_plots.geojson.gz
     cs_plots: List[Dict[str, Any]] = []
@@ -348,6 +418,19 @@ def list_records(
     end = start + page_size
     page_items = records[start:end]
 
+    # Guarantee populated CS UID (UID) and RS UID (UID2) across all views
+    for item in page_items:
+        c_uid = str(item.get("cs_uid") or item.get("uid") or "").strip()
+        r_uid = str(item.get("rs_uid") or item.get("uid2") or "").strip()
+        if not c_uid and item.get("cs_jl") and item.get("cs_plot_no"):
+            c_uid = f"{item['cs_jl']}{item['cs_plot_no']}"
+        if not r_uid and item.get("rs_jl") and item.get("rs_plot_no"):
+            r_uid = f"{item['rs_jl']}{item['rs_plot_no']}"
+        item["cs_uid"] = c_uid
+        item["uid"] = c_uid
+        item["rs_uid"] = r_uid
+        item["uid2"] = r_uid
+
     return {
         "items": page_items,
         "total": total,
@@ -366,7 +449,14 @@ def get_record(table: str, record_id: int) -> Optional[Dict[str, Any]]:
     records = _snapshot_records.get(table, [])
     for r in records:
         if str(r.get("id")) == str(record_id):
-            return dict(r)
+            res = dict(r)
+            c_uid = str(res.get("cs_uid") or res.get("uid") or "").strip()
+            r_uid = str(res.get("rs_uid") or res.get("uid2") or "").strip()
+            res["cs_uid"] = c_uid
+            res["uid"] = c_uid
+            res["rs_uid"] = r_uid
+            res["uid2"] = r_uid
+            return res
     return None
 
 
@@ -390,6 +480,16 @@ def create_record(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
             continue
         cleaned[field] = data.get(field)
 
+    # Synchronize UID (CS UID) and UID2 (RS UID) aliases
+    if data.get("uid") and not cleaned.get("cs_uid"):
+        cleaned["cs_uid"] = str(data["uid"]).strip()
+    if data.get("cs_uid") and not cleaned.get("uid"):
+        cleaned["uid"] = str(data["cs_uid"]).strip()
+    if data.get("uid2") and not cleaned.get("rs_uid"):
+        cleaned["rs_uid"] = str(data["uid2"]).strip()
+    if data.get("rs_uid") and not cleaned.get("uid2"):
+        cleaned["uid2"] = str(data["rs_uid"]).strip()
+
     # Generate UID if missing
     if not cleaned.get("uid") and not cleaned.get("cs_uid"):
         jl = cleaned.get("cs_jl") or cleaned.get("jl_no") or "0"
@@ -411,6 +511,16 @@ def update_record(table: str, record_id: int, data: Dict[str, Any]) -> Optional[
     if table in GIS_TABLES:
         raise ValueError(f"GIS layer '{table}' is fixed. Geometries and features must be updated via GeoJSON upload.")
 
+    # Synchronize UID/UID2 aliases on update
+    if "uid" in data and "cs_uid" not in data:
+        data["cs_uid"] = data["uid"]
+    if "cs_uid" in data and "uid" not in data:
+        data["uid"] = data["cs_uid"]
+    if "uid2" in data and "rs_uid" not in data:
+        data["rs_uid"] = data["uid2"]
+    if "rs_uid" in data and "uid2" not in data:
+        data["uid2"] = data["rs_uid"]
+
     _init_snapshot_records_if_needed()
     records = _snapshot_records.get(table, [])
     for r in records:
@@ -420,6 +530,8 @@ def update_record(table: str, record_id: int, data: Dict[str, Any]) -> Optional[
                     continue
                 if field in data:
                     r[field] = data[field]
+            if "cs_uid" in r and "uid" not in r: r["uid"] = r["cs_uid"]
+            if "rs_uid" in r and "uid2" not in r: r["uid2"] = r["rs_uid"]
             db.invalidate_cache()
             return dict(r)
     return None

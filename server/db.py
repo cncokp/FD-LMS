@@ -930,23 +930,41 @@ def get_rs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
 def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> bytes:
     global _bulk_dossier_cache_bytes
 
-    # Group parcel_info rows by cs_uid and rs_uid
+    # Group parcel_info rows by cs_uid (UID) and rs_uid (UID2)
     parcel_by_uid: Dict[str, List[Dict]] = {}
     parcel_by_rs_uid: Dict[str, List[Dict]] = {}
     for r in parcel_rows:
-        c_uid = str(r.get("cs_uid") or "").strip()
-        r_uid = str(r.get("rs_uid") or "").strip()
+        c_uid = str(r.get("cs_uid") or r.get("uid") or "").strip()
+        r_uid = str(r.get("rs_uid") or r.get("uid2") or "").strip()
+        if not c_uid and r.get("cs_jl") and r.get("cs_plot_no"):
+            c_uid = f"{r['cs_jl']}{r['cs_plot_no']}"
+        if not r_uid and r.get("rs_jl") and r.get("rs_plot_no"):
+            r_uid = f"{r['rs_jl']}{r['rs_plot_no']}"
+        r["cs_uid"] = c_uid
+        r["uid"] = c_uid
+        r["rs_uid"] = r_uid
+        r["uid2"] = r_uid
         if c_uid:
             parcel_by_uid.setdefault(c_uid, []).append(r)
         if r_uid:
             parcel_by_rs_uid.setdefault(r_uid, []).append(r)
 
-    # Group encroachment rows by uid/cs_uid and rs_uid
+    # Group encroachment rows by uid/cs_uid and rs_uid/uid2
     encroach_by_uid: Dict[str, List[Dict]] = {}
     encroach_by_rs_uid: Dict[str, List[Dict]] = {}
     for r in encroach_rows:
-        c_uid = str(r.get("uid") or r.get("cs_uid") or "").strip()
-        r_uid = str(r.get("rs_uid") or "").strip()
+        c_uid = str(r.get("cs_uid") or r.get("uid") or "").strip()
+        r_uid = str(r.get("rs_uid") or r.get("uid2") or "").strip()
+        if not r_uid:
+            cp = str(r.get("cs_plot_no") or "").strip()
+            rp = str(r.get("rs_plot_no") or "").strip()
+            jl = c_uid[:-len(cp)] if (c_uid and cp and c_uid.endswith(cp)) else ""
+            if jl and rp:
+                r_uid = f"{jl}{rp}"
+        r["cs_uid"] = c_uid
+        r["uid"] = c_uid
+        r["rs_uid"] = r_uid
+        r["uid2"] = r_uid
         if c_uid:
             encroach_by_uid.setdefault(c_uid, []).append(r)
         if r_uid:
@@ -967,6 +985,10 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
                 "encroacher_name":      er.get("encroacher_name"),
                 "cs_plot_no":           er.get("cs_plot_no"),
                 "rs_plot_no":           er.get("rs_plot_no"),
+                "cs_uid":               uid,
+                "uid":                  uid,
+                "rs_uid":               er.get("rs_uid") or er.get("uid2") or "",
+                "uid2":                 er.get("rs_uid") or er.get("uid2") or "",
                 "rs_khatian":           er.get("rs_khatian"),
                 "sec_20":               er.get("sec_20"),
                 "sec_6":                er.get("sec_6"),
@@ -985,7 +1007,12 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
         }
 
         if not precs:
-            by_uid[uid] = {"has_record": False, "encroachment": encroachment}
+            by_uid[uid] = {
+                "has_record": False,
+                "cs_uid": uid,
+                "uid": uid,
+                "encroachment": encroachment
+            }
             continue
 
         first          = precs[0]
@@ -1010,16 +1037,29 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
 
         linked_rs = []
         for r in precs:
-            if r.get("rs_plot_no"):
+            if r.get("rs_plot_no") or r.get("rs_uid"):
+                r_uid_val = str(r.get("rs_uid") or r.get("uid2") or "").strip()
+                if not r_uid_val and r.get("rs_jl") and r.get("rs_plot_no"):
+                    r_uid_val = f"{r.get('rs_jl')}{r.get('rs_plot_no')}"
                 linked_rs.append({
-                    "rs_plot_no":  r.get("rs_plot_no"),  "rs_jl":      r.get("rs_jl"),
-                    "legal_status": r.get("legal_status"), "khatian_no": r.get("khatian_no"),
-                    "area_fd":     r.get("area_fd"),      "area_others": r.get("area_others"),
-                    "total_area":  r.get("total_area"),   "remarks":     r.get("remarks"),
+                    "rs_plot_no":  r.get("rs_plot_no"),
+                    "rs_jl":       r.get("rs_jl"),
+                    "rs_uid":      r_uid_val,
+                    "uid2":        r_uid_val,
+                    "cs_uid":      uid,
+                    "uid":         uid,
+                    "legal_status": r.get("legal_status"),
+                    "khatian_no":  r.get("khatian_no"),
+                    "area_fd":     r.get("area_fd"),
+                    "area_others": r.get("area_others"),
+                    "total_area":  r.get("total_area"),
+                    "remarks":     r.get("remarks"),
                 })
 
         by_uid[uid] = {
             "has_record":       True,
+            "cs_uid":           uid,
+            "uid":              uid,
             "cs_plot_no":       first.get("cs_plot_no"),
             "mouza":            first.get("mouza"),
             "cs_jl":            first.get("cs_jl"),
@@ -1048,6 +1088,10 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
                 "encroacher_name":      er.get("encroacher_name"),
                 "cs_plot_no":           er.get("cs_plot_no"),
                 "rs_plot_no":           er.get("rs_plot_no"),
+                "rs_uid":               r_uid,
+                "uid2":                 r_uid,
+                "cs_uid":               er.get("cs_uid") or er.get("uid") or "",
+                "uid":                  er.get("cs_uid") or er.get("uid") or "",
                 "rs_khatian":           er.get("rs_khatian"),
                 "sec_20":               er.get("sec_20"),
                 "sec_6":                er.get("sec_6"),
@@ -1066,7 +1110,12 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
         }
 
         if not precs:
-            by_rs_uid[r_uid] = {"has_record": False, "encroachment": encroachment}
+            by_rs_uid[r_uid] = {
+                "has_record": False,
+                "rs_uid": r_uid,
+                "uid2": r_uid,
+                "encroachment": encroachment
+            }
             continue
 
         first          = precs[0]
@@ -1083,18 +1132,30 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
 
         linked_cs = []
         for r in precs:
-            if r.get("cs_plot_no"):
+            if r.get("cs_plot_no") or r.get("cs_uid"):
+                c_uid_val = str(r.get("cs_uid") or r.get("uid") or "").strip()
+                if not c_uid_val and r.get("cs_jl") and r.get("cs_plot_no"):
+                    c_uid_val = f"{r.get('cs_jl')}{r.get('cs_plot_no')}"
                 linked_cs.append({
-                    "cs_plot_no":  r.get("cs_plot_no"),   "cs_jl":      r.get("cs_jl"),
-                    "cs_uid":      r.get("cs_uid"),
+                    "cs_plot_no":  r.get("cs_plot_no"),
+                    "cs_jl":       r.get("cs_jl"),
+                    "cs_uid":      c_uid_val,
+                    "uid":         c_uid_val,
+                    "rs_uid":      r_uid,
+                    "uid2":        r_uid,
                     "cs_land_acre": r.get("cs_land_acre"),
-                    "legal_status": r.get("legal_status"), "khatian_no": r.get("khatian_no"),
-                    "area_fd":     r.get("area_fd"),       "area_others": r.get("area_others"),
-                    "total_area":  r.get("total_area"),    "remarks":     r.get("remarks"),
+                    "legal_status": r.get("legal_status"),
+                    "khatian_no":  r.get("khatian_no"),
+                    "area_fd":     r.get("area_fd"),
+                    "area_others": r.get("area_others"),
+                    "total_area":  r.get("total_area"),
+                    "remarks":     r.get("remarks"),
                 })
 
         by_rs_uid[r_uid] = {
             "has_record":        True,
+            "rs_uid":            r_uid,
+            "uid2":              r_uid,
             "rs_plot_no":        first.get("rs_plot_no"),
             "mouza":             first.get("mouza"),
             "rs_jl":             first.get("rs_jl"),
