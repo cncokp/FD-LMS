@@ -654,18 +654,20 @@ function setupThemeSwitcher() {
   const btnThemeToggle = document.getElementById('btnThemeToggle');
   if (!btnThemeToggle) return;
 
+  const STORAGE_KEY = 'fd_lms_theme_v2';
+
   const getStoredTheme = () => {
     try {
-      return localStorage.getItem('fd_lms_theme') || 'dark';
+      return localStorage.getItem(STORAGE_KEY) || 'light';
     } catch (e) {
-      return 'dark';
+      return 'light';
     }
   };
 
   const applyTheme = (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
     try {
-      localStorage.setItem('fd_lms_theme', theme);
+      localStorage.setItem(STORAGE_KEY, theme);
     } catch (e) {}
 
     const isLight = theme === 'light';
@@ -673,11 +675,11 @@ function setupThemeSwitcher() {
     btnThemeToggle.setAttribute('aria-label', isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme');
   };
 
-  // Sync state on load
+  // Sync state on load (defaults to light)
   applyTheme(getStoredTheme());
 
   btnThemeToggle.addEventListener('click', () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
     const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
     applyTheme(nextTheme);
   });

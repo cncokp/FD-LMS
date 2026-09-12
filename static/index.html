@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -28,22 +28,24 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 
-  <!-- Instant Theme Initialization (prevents FOUC) -->
+  <!-- Instant Theme Initialization (defaults to light theme) -->
   <script>
     (function() {
       try {
-        var t = localStorage.getItem('fd_lms_theme');
-        if (t === 'light') {
-          document.documentElement.setAttribute('data-theme', 'light');
-        } else {
+        var t = localStorage.getItem('fd_lms_theme_v2');
+        if (t === 'dark') {
           document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'light');
         }
-      } catch (e) {}
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
     })();
   </script>
 
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260912_10" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260912_12" />
 
 </head>
 <body>
@@ -343,8 +345,8 @@
   </script>
   <!-- Leaflet & App Scripts — defer keeps HTML parsing non-blocking; order is preserved -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-  <script src="/static/js/dossier.js?v=20260912_11" defer></script>
-  <script src="/static/js/map.js?v=20260912_11" defer></script>
-  <script src="/static/js/app.js?v=20260912_11" defer></script>
+  <script src="/static/js/dossier.js?v=20260912_12" defer></script>
+  <script src="/static/js/map.js?v=20260912_12" defer></script>
+  <script src="/static/js/app.js?v=20260912_12" defer></script>
 </body>
 </html>
