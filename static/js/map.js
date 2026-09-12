@@ -351,14 +351,14 @@ const MapEngine = {
   resetToDefaultExtent() {
     if (this.map && this.defaultParkBounds) {
       this.map.invalidateSize();
-      this.map.fitBounds(this.defaultParkBounds, { padding: [10, 10] });
+      this.map.fitBounds(this.defaultParkBounds, { padding: [8, 8] });
     }
   },
 
   async init() {
     this.map = L.map('map', {
       center: this.defaultParkCenter,
-      zoom: 14,
+      zoom: 14.5,
       minZoom: 10,
       maxZoom: 22,
       zoomControl: false,
@@ -366,12 +366,14 @@ const MapEngine = {
       fadeAnimation: true,
       zoomAnimation: true,
       zoomAnimationThreshold: 4,
-      zoomSnap: 1,
+      zoomSnap: 0,
       zoomDelta: 1,
       wheelPxPerZoomLevel: 120,
       wheelDebounceTime: 60,
       preferCanvas: true
     });
+
+    this.map.fitBounds(this.defaultParkBounds, { padding: [8, 8], animate: false });
 
     L.control.scale({ metric: true, imperial: false, position: 'bottomright' }).addTo(this.map);
 
@@ -1122,9 +1124,9 @@ const MapEngine = {
 
     if (beat.bounds && beat.bounds.length === 4) {
       const [minx, miny, maxx, maxy] = beat.bounds;
-      this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [50, 50], maxZoom: 14 });
+      this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [15, 15] });
     } else if (beat.lat && beat.lng) {
-      this.map.setView([beat.lat, beat.lng], 13, { animate: true });
+      this.map.setView([beat.lat, beat.lng], 13.5, { animate: true });
     }
   },
 
