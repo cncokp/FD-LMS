@@ -389,31 +389,14 @@ const MapEngine = {
     this.map.getPane('encroachPane').style.zIndex = 450;
     this.map.getPane('encroachPane').style.pointerEvents = 'none';
 
-    // Set canvasRenderer pane to csPane with 0.6 padding buffer to keep 2.2x viewport in canvas for zero-lag pan
-    this.canvasRenderer = L.canvas({ padding: 0.6, tolerance: 10, pane: 'csPane' });
-
-    // Force canvasRenderer to update on moveend (pan end) so newly visible parcels immediately render
-    this.canvasRenderer._onMoveEnd = function () {
-      if (!this._map || this._map._animatingZoom) return;
-      this._update();
-    };
-
-    // Frame throttle _update so rapid consecutive events do not cause duplicate renders
-    let _lastRendererUpdate = 0;
-    const _origCanvasUpdate = this.canvasRenderer._update.bind(this.canvasRenderer);
-    this.canvasRenderer._update = function () {
-      const now = performance.now();
-      if (now - _lastRendererUpdate < 16) return;
-      _lastRendererUpdate = now;
-      _origCanvasUpdate();
-    };
+    // Set canvasRenderer pane to csPane with 0.25 padding buffer so pans trigger refresh naturally
+    this.canvasRenderer = L.canvas({ padding: 0.25, tolerance: 10, pane: 'csPane' });
 
     // Patch _updatePaths with spatial viewport culling to eliminate zoom freeze on 12,000+ vector parcels
     this.canvasRenderer._updatePaths = function () {
       this._redrawBounds = null;
       if (!this._map) return;
-      // Pre-render a generous 70% margin around the screen so panning is completely seamless
-      const padBounds = this._map.getBounds().pad(0.70);
+      const padBounds = this._map.getBounds().pad(0.50);
       const south = padBounds.getSouth();
       const north = padBounds.getNorth();
       const west = padBounds.getWest();
@@ -427,9 +410,7 @@ const MapEngine = {
           // b: [minLng, minLat, maxLng, maxLat]
           if (b[2] < west || b[0] > east || b[3] < south || b[1] > north) {
             layer._parts = [];
-            // Note: Never set layer._pxBounds = null!
-            // In Leaflet, Polyline._clipPoints checks `if (!this._pxBounds) return;`
-            // Setting _pxBounds = null permanently prevents the plot from rendering when panned to.
+            // Never set layer._pxBounds = null! Culled plots must keep their projected bounds.
             continue;
           }
         } else if (layer.getBounds) {
@@ -439,10 +420,6 @@ const MapEngine = {
             layer._parts = [];
             continue;
           }
-        }
-        // If a layer lost its projection or pxBounds, restore it dynamically
-        if (!layer._pxBounds && layer._project) {
-          layer._project();
         }
         layer._update();
       }
@@ -483,8 +460,12 @@ const MapEngine = {
 
     this.map.on('moveend', () => {
       this.updateBeatLabelsVisibility();
-      if (this.canvasRenderer && !this.map._animatingZoom) {
-        this.canvasRenderer._update();
+      if (this.canvasRenderer && this.canvasRenderer._map && !this.map._animatingZoom) {
+        try {
+          this.canvasRenderer._update();
+        } catch (err) {
+          // ignore if renderer is transitioning
+        }
       }
     });
 
