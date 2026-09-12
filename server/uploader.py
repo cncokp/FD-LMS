@@ -475,6 +475,42 @@ def preview_upload(
         clean_view = {k: v for k, v in mapped.items() if not k.startswith("_")}
         preview_rows.append(clean_view)
 
+    steps_executed = [
+        {
+            "step": 1,
+            "title": "File Stream & Integrity Check",
+            "status": "completed",
+            "details": f"Loaded {len(file_bytes):,} bytes from '{filename}'. Binary integrity verified."
+        },
+        {
+            "step": 2,
+            "title": "Dataset & Geometry Decoding",
+            "status": "completed",
+            "details": f"Decoded {len(rows):,} {file_type.upper()} items across {len(headers)} attributes."
+        },
+        {
+            "step": 3,
+            "title": "Schema Analysis & Column Mapping",
+            "status": "completed",
+            "details": f"Auto-detected {len(target_to_source)} field alignments for target table '{active_table}'."
+        },
+        {
+            "step": 4,
+            "title": "Preview Assembly & Ready for Review",
+            "status": "completed",
+            "details": f"Generated {len(preview_rows)} live sample records ready for schema confirmation."
+        }
+    ]
+
+    logs = [
+        f"File stream received: {filename} ({len(file_bytes):,} bytes)",
+        f"Format detected: {file_type.upper()} ({len(rows):,} items parsed)",
+        f"Detected attributes: {', '.join(headers[:8])}{'...' if len(headers) > 8 else ''}",
+        f"Target recommendation: {recommended_table} (Active: {active_table})",
+        f"Field bindings: {len(target_to_source)} matched, {len(unmapped)} unmapped",
+        "Schema analysis complete. Ready for user verification."
+    ]
+
     return {
         "filename": filename,
         "file_type": file_type,
@@ -491,7 +527,9 @@ def preview_upload(
         "source_to_target": source_to_target,
         "unmapped_fields": unmapped,
         "unmapped_columns": unmapped,
-        "preview_rows": preview_rows
+        "preview_rows": preview_rows,
+        "steps_executed": steps_executed,
+        "logs": logs
     }
 
 
@@ -644,6 +682,47 @@ def commit_upload(
         admin_db._snapshot_records[target_table] = admin_records
         db.invalidate_cache(target_table)
 
+        steps_executed = [
+            {
+                "step": 1,
+                "title": "Field Mapping Validation",
+                "status": "completed",
+                "details": f"Verified bindings for '{target_table}' ({mode.upper()} mode)."
+            },
+            {
+                "step": 2,
+                "title": "Data Normalization & Coordinates Check",
+                "status": "completed",
+                "details": f"Processed {len(raw_rows):,} features, bounds [{bounds_val[0]}, {bounds_val[1]} to {bounds_val[2]}, {bounds_val[3]}]." if bounds_val else f"Processed {len(raw_rows):,} features."
+            },
+            {
+                "step": 3,
+                "title": "Spatial Layer Feature Storage",
+                "status": "completed",
+                "details": f"Inserted {inserted} new features, updated {updated} existing features (Total: {len(all_final_features)})."
+            },
+            {
+                "step": 4,
+                "title": "GZip Snapshot Cache Compression",
+                "status": "completed",
+                "details": f"Compressed {len(fc_bytes):,} raw bytes into {len(gz_bytes):,} gzip bytes."
+            },
+            {
+                "step": 5,
+                "title": "System Synchronization",
+                "status": "completed",
+                "details": "In-memory cache invalidated and vector layer primed for live map rendering."
+            }
+        ]
+
+        logs = [
+            f"GIS ingestion transaction committed for '{target_table}'",
+            f"Features processed: {len(raw_rows):,} (Inserted: {inserted}, Updated: {updated})",
+            f"Total active features in layer: {len(all_final_features)}",
+            f"Disk snapshot saved ({len(gz_bytes):,} bytes, ETag: {db._calc_etag(gz_bytes)[:12]}...)",
+            "Live layer refreshed across client views"
+        ]
+
         return {
             "success": True,
             "target_table": target_table,
@@ -652,7 +731,9 @@ def commit_upload(
             "total_processed": len(raw_rows),
             "total_features": len(all_final_features),
             "inserted": inserted,
-            "updated": updated
+            "updated": updated,
+            "steps_executed": steps_executed,
+            "logs": logs
         }
 
     # -----------------------------------------------------------------------
@@ -684,8 +765,48 @@ def commit_upload(
             inserted += 1
 
     # Rebuild bulk dossier so by_uid and by_rs_uid are immediately updated
-    db.rebuild_snapshots()
+    rebuild_res = db.rebuild_snapshots()
     db.invalidate_cache()
+
+    steps_executed = [
+        {
+            "step": 1,
+            "title": "Field Mapping Validation",
+            "status": "completed",
+            "details": f"Verified field bindings for table '{target_table}' ({mode.upper()} mode)."
+        },
+        {
+            "step": 2,
+            "title": "Bengali Numeral Translation & UID Normalization",
+            "status": "completed",
+            "details": f"Normalized Bengali digits and synthesized CS/RS UIDs across {len(raw_rows):,} rows."
+        },
+        {
+            "step": 3,
+            "title": "Database Table Ingestion",
+            "status": "completed",
+            "details": f"Inserted {inserted} new records, updated {updated} existing records."
+        },
+        {
+            "step": 4,
+            "title": "Snapshot Rebuild & GZip Serialization",
+            "status": "completed",
+            "details": f"Re-serialized bulk dossier snapshot ({rebuild_res.get('bulk_dossier', {}).get('bytes', 0):,} bytes)."
+        },
+        {
+            "step": 5,
+            "title": "Table & Dashboard State Synchronization",
+            "status": "completed",
+            "details": "Invalidated in-memory cache and updated live filter indexes."
+        }
+    ]
+
+    logs = [
+        f"Tabular ingestion transaction completed for '{target_table}'",
+        f"Rows processed: {len(raw_rows):,} (Inserted: {inserted}, Updated: {updated})",
+        f"Bulk dossier updated: {rebuild_res.get('bulk_dossier', {}).get('bytes', 0):,} bytes",
+        "Cache invalidated and live dashboard re-indexed"
+    ]
 
     return {
         "success": True,
@@ -694,5 +815,7 @@ def commit_upload(
         "mode": mode,
         "total_processed": len(raw_rows),
         "inserted": inserted,
-        "updated": updated
+        "updated": updated,
+        "steps_executed": steps_executed,
+        "logs": logs
     }

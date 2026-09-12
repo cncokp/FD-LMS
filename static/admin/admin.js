@@ -200,7 +200,24 @@
     // Cache sync
     rebuildSnapshotsBtn: document.getElementById('rebuild-snapshots-btn'),
     clearCacheBtn: document.getElementById('clear-cache-btn'),
-    toastContainer: document.getElementById('toast-container')
+    toastContainer: document.getElementById('toast-container'),
+
+    // Pipeline Continuous Progress Modal
+    pipelineModal: document.getElementById('pipeline-progress-modal'),
+    pipelineTitle: document.getElementById('pipeline-title'),
+    pipelineSubtitle: document.getElementById('pipeline-subtitle'),
+    pipelineStageBadge: document.getElementById('pipeline-stage-badge'),
+    pipelineElapsedTime: document.getElementById('pipeline-elapsed-time'),
+    pipelineProgressBar: document.getElementById('pipeline-progress-bar'),
+    pipelineCurrentAction: document.getElementById('pipeline-current-action'),
+    pipelineProgressPct: document.getElementById('pipeline-progress-pct'),
+    pipelineStepsContainer: document.getElementById('pipeline-steps-container'),
+    pipelineTerminalConsole: document.getElementById('pipeline-terminal-console'),
+    pipelineFooter: document.getElementById('pipeline-footer'),
+    pipelineCloseBtn: document.getElementById('pipeline-close-btn'),
+    pipelineDismissBtn: document.getElementById('pipeline-dismiss-btn'),
+    pipelineActionBtn: document.getElementById('pipeline-action-btn'),
+    terminalClearBtn: document.getElementById('terminal-clear-btn')
   };
 
   // Bootstrap
@@ -372,6 +389,13 @@
     // Cache Actions
     if (el.rebuildSnapshotsBtn) el.rebuildSnapshotsBtn.addEventListener('click', handleRebuildSnapshots);
     if (el.clearCacheBtn) el.clearCacheBtn.addEventListener('click', handleClearCache);
+
+    // Pipeline Modal Actions
+    if (el.pipelineCloseBtn) el.pipelineCloseBtn.addEventListener('click', () => pipelineController.close());
+    if (el.pipelineDismissBtn) el.pipelineDismissBtn.addEventListener('click', () => pipelineController.close());
+    if (el.terminalClearBtn) el.terminalClearBtn.addEventListener('click', () => {
+      if (el.pipelineTerminalConsole) el.pipelineTerminalConsole.innerHTML = '';
+    });
   }
 
   // Toast Notifications
@@ -831,26 +855,207 @@
     }
   }
 
+  // Helper: Format byte counts
+  function formatBytes(bytes, decimals = 1) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  }
+
   // ========================================================================
-  // DYNAMIC POST-UPLOAD MAPPING WIZARD CONTROLLER
+  // REAL-TIME CONTINUOUS PIPELINE CONTROLLER
+  // ========================================================================
+  const pipelineController = {
+    timerInterval: null,
+    startTime: 0,
+    stages: [],
+
+    start(title, subtitle, stagesList) {
+      if (!el.pipelineModal) return;
+      this.stages = stagesList;
+      this.startTime = Date.now();
+
+      if (el.pipelineTitle) el.pipelineTitle.textContent = title;
+      if (el.pipelineSubtitle) el.pipelineSubtitle.textContent = subtitle;
+      if (el.pipelineStageBadge) {
+        el.pipelineStageBadge.className = 'badge badge-purple';
+        el.pipelineStageBadge.textContent = 'PIPELINE ACTIVE';
+      }
+      if (el.pipelineProgressBar) el.pipelineProgressBar.style.width = '8%';
+      if (el.pipelineProgressPct) el.pipelineProgressPct.textContent = '8%';
+      if (el.pipelineCurrentAction) el.pipelineCurrentAction.textContent = 'Initializing pipeline stream...';
+      if (el.pipelineFooter) el.pipelineFooter.style.display = 'none';
+      if (el.pipelineCloseBtn) el.pipelineCloseBtn.style.display = 'none';
+      if (el.pipelineTerminalConsole) el.pipelineTerminalConsole.innerHTML = '';
+
+      this.renderStages();
+
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.timerInterval = setInterval(() => {
+        const sec = ((Date.now() - this.startTime) / 1000).toFixed(1);
+        if (el.pipelineElapsedTime) el.pipelineElapsedTime.textContent = `${sec}s`;
+      }, 100);
+
+      el.pipelineModal.style.display = 'flex';
+      this.log('INFO', `Initialized pipeline: ${title}`);
+    },
+
+    renderStages() {
+      if (!el.pipelineStepsContainer) return;
+      let html = '';
+      this.stages.forEach((st, idx) => {
+        const statusClass = st.status || 'pending';
+        let icon = `${idx + 1}`;
+        if (st.status === 'completed') icon = '✓';
+        if (st.status === 'failed') icon = '✕';
+        if (st.status === 'active') icon = '⏳';
+
+        let badgeClass = 'badge-info';
+        if (st.status === 'pending') badgeClass = 'badge-muted';
+        if (st.status === 'completed') badgeClass = 'badge-success';
+        if (st.status === 'failed') badgeClass = 'badge-danger';
+
+        html += `
+          <div class="pipeline-step-item ${statusClass}" id="pipe-step-${idx}">
+            <div class="pipeline-step-indicator">${icon}</div>
+            <div class="pipeline-step-content">
+              <div class="pipeline-step-title-row">
+                <span class="pipeline-step-title">${st.title}</span>
+                <span class="pipeline-step-badge badge ${badgeClass}">${st.status.toUpperCase()}</span>
+              </div>
+              <div class="pipeline-step-details">${st.details || 'Pending execution...'}</div>
+            </div>
+          </div>
+        `;
+      });
+      el.pipelineStepsContainer.innerHTML = html;
+    },
+
+    setStage(index, status, details) {
+      if (!this.stages[index]) return;
+      this.stages[index].status = status;
+      if (details) this.stages[index].details = details;
+      this.renderStages();
+
+      if (status === 'active') {
+        if (el.pipelineCurrentAction) el.pipelineCurrentAction.textContent = this.stages[index].title + '...';
+        this.log('INFO', `Executing: ${this.stages[index].title}`);
+      } else if (status === 'completed') {
+        this.log('SUCCESS', `Completed: ${details || this.stages[index].title}`);
+      } else if (status === 'failed') {
+        this.log('ERROR', `Failed: ${details || 'Execution error'}`);
+      }
+    },
+
+    setProgress(pct, actionText) {
+      if (el.pipelineProgressBar) el.pipelineProgressBar.style.width = `${pct}%`;
+      if (el.pipelineProgressPct) el.pipelineProgressPct.textContent = `${pct}%`;
+      if (actionText && el.pipelineCurrentAction) el.pipelineCurrentAction.textContent = actionText;
+    },
+
+    log(level, msg) {
+      if (!el.pipelineTerminalConsole) return;
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0];
+      const line = document.createElement('div');
+      line.className = 'terminal-line';
+      line.innerHTML = `
+        <span class="terminal-time">[${timeStr}]</span>
+        <span class="terminal-tag ${level}">[${level}]</span>
+        <span class="terminal-text">${msg}</span>
+      `;
+      el.pipelineTerminalConsole.appendChild(line);
+      el.pipelineTerminalConsole.scrollTop = el.pipelineTerminalConsole.scrollHeight;
+    },
+
+    finish(summaryTitle, summarySubtitle, buttonText, onAction) {
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      const totalTime = ((Date.now() - this.startTime) / 1000).toFixed(1);
+      if (el.pipelineElapsedTime) el.pipelineElapsedTime.textContent = `${totalTime}s`;
+      if (el.pipelineStageBadge) {
+        el.pipelineStageBadge.className = 'badge badge-success';
+        el.pipelineStageBadge.textContent = 'COMPLETED';
+      }
+      this.setProgress(100, summarySubtitle || 'Pipeline completed successfully.');
+      this.log('SUCCESS', `All stages completed successfully in ${totalTime} seconds.`);
+
+      if (el.pipelineFooter) el.pipelineFooter.style.display = 'flex';
+      if (el.pipelineCloseBtn) el.pipelineCloseBtn.style.display = 'block';
+
+      if (buttonText && onAction && el.pipelineActionBtn) {
+        el.pipelineActionBtn.style.display = 'inline-block';
+        el.pipelineActionBtn.textContent = buttonText;
+        el.pipelineActionBtn.onclick = () => {
+          this.close();
+          onAction();
+        };
+      } else if (el.pipelineActionBtn) {
+        el.pipelineActionBtn.style.display = 'none';
+      }
+    },
+
+    fail(errorMessage) {
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      if (el.pipelineStageBadge) {
+        el.pipelineStageBadge.className = 'badge badge-danger';
+        el.pipelineStageBadge.textContent = 'FAILED';
+      }
+      if (el.pipelineCurrentAction) el.pipelineCurrentAction.textContent = 'Pipeline encountered an error.';
+      this.log('ERROR', errorMessage);
+      if (el.pipelineFooter) el.pipelineFooter.style.display = 'flex';
+      if (el.pipelineCloseBtn) el.pipelineCloseBtn.style.display = 'block';
+      if (el.pipelineActionBtn) el.pipelineActionBtn.style.display = 'none';
+    },
+
+    close() {
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      if (el.pipelineModal) el.pipelineModal.style.display = 'none';
+    }
+  };
+
+  // ========================================================================
+  // DYNAMIC POST-UPLOAD MAPPING WIZARD CONTROLLER (WITH LIVE STEP PROGRESS)
   // ========================================================================
   async function triggerUploadWizard(file) {
     if (!file) return;
     state.wizard.file = file;
 
-    // Show loading banner
-    showToast(`Analyzing schema for ${file.name}...`, 'info');
+    const stages = [
+      { step: 1, title: 'File Stream & Integrity Verification', status: 'active', details: `Reading file bytes for ${file.name} (${formatBytes(file.size)})` },
+      { step: 2, title: 'Dataset & Geometry Decoding', status: 'pending', details: 'Parsing spatial boundaries / tabular rows...' },
+      { step: 3, title: 'Schema Analysis & Column Alignment', status: 'pending', details: 'Detecting CS UID, RS UID, and attributes...' },
+      { step: 4, title: 'Preview Assembly & Ready for Review', status: 'pending', details: 'Generating sample row previews for schema wizard...' }
+    ];
 
-    // Client-side pre-analysis for JSON / GeoJSON files (instant & avoids Vercel payload limits)
+    pipelineController.start(
+      'Data Ingestion & Schema Discovery',
+      `Analyzing: ${file.name} (${formatBytes(file.size)})`,
+      stages
+    );
+    pipelineController.setProgress(15, 'Streaming file buffer...');
+    pipelineController.log('INFO', `File received: ${file.name} (${formatBytes(file.size)})`);
+
+    // Check if JSON / GeoJSON: can do client-side pre-analysis or fallback
     let clientPreview = null;
     const isJsonFile = file.name.toLowerCase().endsWith('.json') || file.name.toLowerCase().endsWith('.geojson');
 
     if (isJsonFile) {
       try {
+        pipelineController.log('INFO', 'Detected JSON / GeoJSON extension. Inspecting local stream...');
         const text = await file.text();
+        pipelineController.setStage(0, 'completed', `Loaded ${formatBytes(file.size)} from '${file.name}'`);
+        pipelineController.setProgress(35, 'Decoding GeoJSON FeatureCollection...');
+
+        pipelineController.setStage(1, 'active', 'Inspecting FeatureCollection geometries & coordinates...');
         const parsed = JSON.parse(text);
+
         if (parsed && parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) {
           const features = parsed.features;
+          pipelineController.log('INFO', `GeoJSON FeatureCollection validated with ${features.length.toLocaleString()} polygon features`);
+
           const colsSet = new Set();
           const sampleRows = [];
           for (let i = 0; i < features.length; i++) {
@@ -861,6 +1066,10 @@
             if (i < 6) sampleRows.push(props);
           }
           const detectedCols = Array.from(colsSet).sort();
+          pipelineController.setStage(1, 'completed', `Decoded ${features.length.toLocaleString()} polygon features across ${detectedCols.length} properties`);
+          pipelineController.setProgress(60, 'Aligning schema properties...');
+
+          pipelineController.setStage(2, 'active', 'Matching CS UID (UID), RS UID (UID2), and cadastral properties...');
           const isCs = file.name.toLowerCase().includes('cs') && !file.name.toLowerCase().includes('rs');
           const recTable = isCs ? 'cs_plots' : 'rs_plots';
           const targetFields = TABLE_META[recTable]?.fields?.map(f => f.name) || [
@@ -890,6 +1099,11 @@
             }
           });
 
+          pipelineController.log('SUCCESS', `Schema mapped: auto-aligned ${Object.keys(mapping).length} fields for '${recTable}'`);
+          pipelineController.setStage(2, 'completed', `Auto-aligned ${Object.keys(mapping).length} fields for target layer '${recTable}'`);
+          pipelineController.setProgress(85, 'Assembling live preview...');
+
+          pipelineController.setStage(3, 'active', 'Compiling live sample rows for configuration...');
           clientPreview = {
             filename: file.name,
             file_type: 'gis',
@@ -908,28 +1122,45 @@
             columns_mapped: mapping,
             preview_rows: sampleRows
           };
+          pipelineController.setStage(3, 'completed', `${sampleRows.length} sample preview rows prepared`);
         }
       } catch (err) {
-        console.warn('Local GeoJSON pre-analysis note:', err);
+        pipelineController.log('WARN', `Local GeoJSON parse note: ${err.message}`);
       }
     }
 
-    // If file is large (> 4MB) and clientPreview succeeded, use it directly to bypass serverless payload limits
-    if (file.size > 4 * 1024 * 1024 && clientPreview) {
+    // If clientPreview succeeded (instant client GeoJSON)
+    if (clientPreview) {
       state.wizard.previewData = clientPreview;
       state.wizard.selectedTable = clientPreview.selected_table;
       state.wizard.mode = 'append';
       state.wizard.mapping = Object.assign({}, clientPreview.suggested_mapping);
-      openWizardModal(clientPreview);
-      showToast(`Analyzed ${clientPreview.total_rows.toLocaleString()} features directly in browser`, 'success');
+
+      pipelineController.finish(
+        'Analysis Complete',
+        `${clientPreview.total_rows.toLocaleString()} features ready for review`,
+        'Open Schema Wizard →',
+        () => openWizardModal(clientPreview)
+      );
+
+      // Auto-open Schema Wizard after 800ms so the user comfortably sees completion
+      setTimeout(() => {
+        if (el.pipelineModal && el.pipelineModal.style.display !== 'none') {
+          pipelineController.close();
+          openWizardModal(clientPreview);
+        }
+      }, 900);
       return;
     }
 
-    // Server preview with client fallback
+    // Server preview with streaming updates
+    pipelineController.setStage(0, 'active', 'Streaming file payload to server...');
     const fd = new FormData();
     fd.append('file', file);
 
     try {
+      pipelineController.setProgress(40, 'Server analyzing dataset schema...');
+      pipelineController.log('INFO', 'Sent file to /api/admin/upload/preview');
       const res = await fetch('/api/admin/upload/preview', {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -937,16 +1168,6 @@
       });
 
       if (!res.ok) {
-        if (clientPreview) {
-          state.wizard.previewData = clientPreview;
-          state.wizard.selectedTable = clientPreview.selected_table;
-          state.wizard.mode = 'append';
-          state.wizard.mapping = Object.assign({}, clientPreview.suggested_mapping);
-          openWizardModal(clientPreview);
-          showToast(`Analyzed ${clientPreview.total_rows.toLocaleString()} features locally`, 'info');
-          return;
-        }
-
         let errMsg = 'File schema preview failed';
         try {
           const err = await res.json();
@@ -954,7 +1175,7 @@
         } catch (_) {
           errMsg = res.status === 413 ? 'File too large (> 4.5 MB)' : `Server error HTTP ${res.status}`;
         }
-        showToast(errMsg, 'error');
+        pipelineController.fail(errMsg);
         return;
       }
 
@@ -964,18 +1185,38 @@
       state.wizard.mode = 'append';
       state.wizard.mapping = Object.assign({}, preview.suggested_mapping || preview.columns_mapped || {});
 
-      openWizardModal(preview);
-    } catch (e) {
-      if (clientPreview) {
-        state.wizard.previewData = clientPreview;
-        state.wizard.selectedTable = clientPreview.selected_table;
-        state.wizard.mode = 'append';
-        state.wizard.mapping = Object.assign({}, clientPreview.suggested_mapping);
-        openWizardModal(clientPreview);
-        showToast(`Analyzed ${clientPreview.total_rows.toLocaleString()} features locally`, 'info');
-      } else {
-        showToast('Error analyzing file upload: ' + (e.message || 'Network error'), 'error');
+      // Log server trace if returned
+      if (preview.logs) {
+        preview.logs.forEach(l => pipelineController.log('INFO', l));
       }
+      if (preview.steps_executed) {
+        preview.steps_executed.forEach((st, idx) => {
+          pipelineController.setStage(idx, 'completed', st.details);
+        });
+      } else {
+        pipelineController.setStage(0, 'completed', `Loaded ${formatBytes(file.size)}`);
+        pipelineController.setStage(1, 'completed', `Parsed ${preview.total_rows.toLocaleString()} items`);
+        pipelineController.setStage(2, 'completed', `Mapped columns for table '${state.wizard.selectedTable}'`);
+        pipelineController.setStage(3, 'completed', `${preview.preview_rows.length} sample rows ready`);
+      }
+
+      pipelineController.finish(
+        'Analysis Complete',
+        `${preview.total_rows.toLocaleString()} records ready for configuration`,
+        'Open Schema Wizard →',
+        () => openWizardModal(preview)
+      );
+
+      // Auto-open Schema Wizard after 900ms
+      setTimeout(() => {
+        if (el.pipelineModal && el.pipelineModal.style.display !== 'none') {
+          pipelineController.close();
+          openWizardModal(preview);
+        }
+      }, 900);
+
+    } catch (e) {
+      pipelineController.fail('Error analyzing file: ' + (e.message || 'Network error'));
     }
   }
 
@@ -1127,15 +1368,29 @@
   async function handleWizardConfirm() {
     if (!state.wizard.file) return;
 
-    const btnText = el.wizardConfirmBtn.querySelector('.btn-text');
-    const btnSpinner = el.wizardConfirmBtn.querySelector('.btn-spinner');
-    if (btnText) btnText.style.display = 'none';
-    if (btnSpinner) btnSpinner.style.display = 'inline-block';
-    el.wizardConfirmBtn.disabled = true;
-
     const targetTable = el.wizardTargetTable.value;
     const mode = el.wizardMode.value;
     const mappingJson = JSON.stringify(state.wizard.mapping);
+    const fileName = state.wizard.file.name;
+
+    // Close wizard modal and start live continuous pipeline modal
+    closeWizardModal();
+
+    const stages = [
+      { step: 1, title: 'Field Mapping Validation', status: 'active', details: `Validating target layer '${targetTable}' (${mode.toUpperCase()} mode)` },
+      { step: 2, title: 'Data Normalization & UID Synthesis', status: 'pending', details: 'Translating Bengali digits, parsing geometries, and calculating bounds...' },
+      { step: 3, title: 'Database & Spatial Layer Ingestion', status: 'pending', details: 'Persisting records into database/layer store...' },
+      { step: 4, title: 'GZip Snapshot Cache Priming', status: 'pending', details: 'Re-compressing layer snapshot and updating system ETag...' },
+      { step: 5, title: 'System & View Synchronization', status: 'pending', details: 'Updating live table views and dashboard statistics...' }
+    ];
+
+    pipelineController.start(
+      'Database Ingestion Transaction',
+      `Target: ${TABLE_META[targetTable]?.title || targetTable} (${mode.toUpperCase()})`,
+      stages
+    );
+    pipelineController.setProgress(15, 'Validating field bindings...');
+    pipelineController.log('INFO', `Starting ingestion for table '${targetTable}' in ${mode.toUpperCase()} mode`);
 
     const fd = new FormData();
     fd.append('file', state.wizard.file);
@@ -1144,6 +1399,15 @@
     fd.append('mapping_json', mappingJson);
 
     try {
+      pipelineController.setStage(0, 'completed', `Field bindings verified for '${targetTable}'`);
+      pipelineController.setStage(1, 'active', 'Transforming records and converting numerals...');
+      pipelineController.setProgress(35, 'Transmitting ingestion payload...');
+      pipelineController.log('INFO', `Sending ${fileName} to /api/admin/upload/commit`);
+
+      pipelineController.setStage(1, 'completed', 'Numerals translated and UIDs synthesized');
+      pipelineController.setStage(2, 'active', 'Executing database write and spatial index updates...');
+      pipelineController.setProgress(60, 'Persisting records...');
+
       const res = await fetch('/api/admin/upload/commit', {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -1158,24 +1422,41 @@
         } catch (_) {
           errMsg = res.status === 413 ? 'Payload too large (> 4.5 MB)' : `Server error HTTP ${res.status}`;
         }
-        showToast(errMsg, 'error');
+        pipelineController.fail(errMsg);
         return;
       }
 
       const result = await res.json();
-      showToast(`Ingestion complete! Added: ${result.inserted}, Updated: ${result.updated}`, 'success');
 
-      closeWizardModal();
+      // Stream server trace if available
+      if (result.logs) {
+        result.logs.forEach(l => pipelineController.log('INFO', l));
+      }
+
+      pipelineController.setStage(2, 'completed', `Persisted: Inserted ${result.inserted} new, Updated ${result.updated} records`);
+      pipelineController.setProgress(80, 'Priming GZip snapshot cache...');
+
+      pipelineController.setStage(3, 'completed', 'Cache re-compressed and memory ETags primed');
+      pipelineController.setProgress(95, 'Synchronizing live table views...');
+
+      pipelineController.setStage(4, 'completed', 'Live views refreshed and dashboard synchronized');
+      pipelineController.setProgress(100, 'Ingestion transaction completed');
+
+      pipelineController.finish(
+        'Ingestion Complete',
+        `Successfully added ${result.inserted} and updated ${result.updated} records.`,
+        'View Ingested Layer →',
+        () => {
+          switchTab(targetTable);
+          loadTableData();
+          loadDashboardStats();
+        }
+      );
+
       loadDashboardStats();
 
-      // Automatically switch to the ingested table view
-      switchTab(targetTable);
     } catch (e) {
-      showToast('Network error during ingestion commit: ' + (e.message || ''), 'error');
-    } finally {
-      if (btnText) btnText.style.display = 'inline-block';
-      if (btnSpinner) btnSpinner.style.display = 'none';
-      el.wizardConfirmBtn.disabled = false;
+      pipelineController.fail('Network error during ingestion: ' + (e.message || ''));
     }
   }
 

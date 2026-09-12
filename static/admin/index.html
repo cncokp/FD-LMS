@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FD-LMS Admin Portal | Forest Department Cadastral Management</title>
   <link rel="icon" type="image/svg+xml" href="/static/bdfd_logo.svg">
-  <link rel="stylesheet" href="/static/admin/admin.css?v=2.3.1">
+  <link rel="stylesheet" href="/static/admin/admin.css?v=2.3.2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -604,9 +604,65 @@
     </div>
   </div>
 
+  <!-- PIPELINE CONTINUOUS PROGRESS MODAL -->
+  <div id="pipeline-progress-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-dialog pipeline-dialog">
+      <div class="modal-header">
+        <div class="pipeline-header-info">
+          <div class="pipeline-badge-row">
+            <span class="badge badge-purple" id="pipeline-stage-badge">PIPELINE ACTIVE</span>
+            <span class="pipeline-elapsed-time" id="pipeline-elapsed-time">0.0s</span>
+          </div>
+          <h3 class="modal-title" id="pipeline-title">Backend Data Processing</h3>
+          <p class="modal-subtitle text-sm text-muted" id="pipeline-subtitle">Executing data ingestion pipeline...</p>
+        </div>
+        <button class="modal-close-btn" id="pipeline-close-btn" style="display: none;">&times;</button>
+      </div>
+
+      <div class="modal-body pipeline-body">
+        <!-- Progress Bar -->
+        <div class="pipeline-progress-wrap">
+          <div class="pipeline-progress-bar-bg">
+            <div class="pipeline-progress-bar" id="pipeline-progress-bar" style="width: 0%;"></div>
+          </div>
+          <div class="pipeline-progress-meta">
+            <span id="pipeline-current-action">Initializing stream...</span>
+            <span id="pipeline-progress-pct">0%</span>
+          </div>
+        </div>
+
+        <!-- Step-by-Step Stepper Cards -->
+        <div class="pipeline-steps-container" id="pipeline-steps-container">
+          <!-- Dynamically populated step cards -->
+        </div>
+
+        <!-- Live Backend Terminal Stream -->
+        <div class="pipeline-terminal-card mt-3">
+          <div class="pipeline-terminal-header">
+            <div class="terminal-dots">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+            </div>
+            <span class="terminal-title">Backend Execution Stream & System Logs</span>
+            <button class="terminal-copy-btn" id="terminal-clear-btn" title="Clear console">Clear</button>
+          </div>
+          <div class="pipeline-terminal-console" id="pipeline-terminal-console">
+            <!-- Continuous log lines appended here -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer pipeline-footer" id="pipeline-footer" style="display: none;">
+        <button type="button" class="btn btn-outline" id="pipeline-dismiss-btn">Close</button>
+        <button type="button" class="btn btn-primary" id="pipeline-action-btn">Proceed &rarr;</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="/static/admin/admin.js?v=2.3.1"></script>
+  <script src="/static/admin/admin.js?v=2.3.2"></script>
 </body>
 </html>
