@@ -689,7 +689,10 @@
   function openAddRecordModal() {
     const meta = TABLE_META[state.activeTable];
     if (meta && meta.isGis) {
-      showToast('GIS spatial layers are fixed. Please upload GeoJSON to add features.', 'info');
+      switchTab('uploader');
+      setTimeout(() => {
+        if (el.fileInput) el.fileInput.click();
+      }, 100);
       return;
     }
     state.editingRecordId = null;
