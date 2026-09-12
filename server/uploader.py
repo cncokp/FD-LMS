@@ -30,6 +30,14 @@ def to_english_digits(val: Any) -> str:
         return ""
     return str(val).translate(BN_TO_EN_DIGITS).strip()
 
+def clean_int_str(val: Any) -> Optional[str]:
+    if val is None:
+        return None
+    s = to_english_digits(val).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s if s else None
+
 def clean_float(val: Any) -> Optional[float]:
     if val is None:
         return None
@@ -359,9 +367,18 @@ def map_row_to_schema(
     target_table: str
 ) -> Dict[str, Any]:
     mapped: Dict[str, Any] = {}
-    for orig_col, target_field in column_mapping.items():
-        if orig_col in raw_row:
-            mapped[target_field] = raw_row[orig_col]
+    valid_fields = set(admin_db.TABLE_FIELDS.get(target_table, []))
+
+    for k, v in column_mapping.items():
+        # Case 1: k is target_field and v is source_column (from frontend wizard: {"cs_uid": "UID"})
+        if k in valid_fields and v in raw_row:
+            mapped[k] = raw_row[v]
+        # Case 2: k is source_column and v is target_field (from detect_mapping: {"UID": "cs_uid"})
+        elif k in raw_row and v in valid_fields:
+            mapped[v] = raw_row[k]
+        # Case 3: fallback direct key copy
+        elif k in raw_row:
+            mapped[v] = raw_row[k]
 
     # Direct fallback for UID (CS UID) and UID2 (RS UID) from raw incoming data
     raw_uid = raw_row.get("UID") or raw_row.get("uid") or raw_row.get("cs_uid") or raw_row.get("CS_UID")
@@ -447,11 +464,14 @@ def preview_upload(
     compatible_tables, recommended_table = recommend_target_table(headers, file_type, filename)
 
     active_table = target_table if target_table in admin_db.ALLOWED_TABLES else recommended_table
-    mapping, unmapped = detect_mapping(headers, active_table)
+    source_to_target, unmapped = detect_mapping(headers, active_table)
+
+    # Target -> source mapping for frontend select dropdowns
+    target_to_source: Dict[str, str] = {tgt: src for src, tgt in source_to_target.items()}
 
     preview_rows = []
     for r in rows[:6]:
-        mapped = map_row_to_schema(r, mapping, active_table)
+        mapped = map_row_to_schema(r, target_to_source, active_table)
         clean_view = {k: v for k, v in mapped.items() if not k.startswith("_")}
         preview_rows.append(clean_view)
 
@@ -466,8 +486,9 @@ def preview_upload(
         "available_target_fields": admin_db.TABLE_FIELDS.get(active_table, []),
         "detected_fields": headers,
         "columns_detected": headers,
-        "suggested_mapping": mapping,
-        "columns_mapped": mapping,
+        "suggested_mapping": target_to_source,
+        "columns_mapped": target_to_source,
+        "source_to_target": source_to_target,
         "unmapped_fields": unmapped,
         "unmapped_columns": unmapped,
         "preview_rows": preview_rows
@@ -577,11 +598,20 @@ def commit_upload(
             "features": all_final_features
         }
 
-        # Write compressed snapshot to disk
+        # Write compressed snapshot to disk (with serverless fallback)
         fc_bytes = json.dumps(fc_payload, separators=(",", ":")).encode("utf-8")
         gz_bytes = gzip.compress(fc_bytes, compresslevel=6)
-        with open(cache_file, "wb") as f:
-            f.write(gz_bytes)
+        try:
+            with open(cache_file, "wb") as f:
+                f.write(gz_bytes)
+        except OSError as e:
+            print(f"[Uploader] Cache write warning ({cache_file}): {e}")
+            try:
+                tmp_cache = os.path.join("/tmp", f"{target_table}.geojson.gz")
+                with open(tmp_cache, "wb") as f:
+                    f.write(gz_bytes)
+            except Exception:
+                pass
 
         # Update in-memory cache and admin snapshot records
         if target_table == "rs_plots":

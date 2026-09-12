@@ -382,16 +382,24 @@
     const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
     toast.innerHTML = `<span><strong>${icon}</strong> ${message}</span>`;
     el.toastContainer.appendChild(toast);
+    const duration = type === 'error' ? 8000 : 4000;
     setTimeout(() => {
       toast.style.opacity = '0';
       setTimeout(() => toast.remove(), 250);
-    }, 4000);
+    }, duration);
   }
 
   // Auth Handling
+  function getAuthHeaders(extra = {}) {
+    const token = localStorage.getItem('fd_admin_token');
+    const headers = { ...extra };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  }
+
   async function checkAuthSession() {
     try {
-      const res = await fetch('/api/admin/me');
+      const res = await fetch('/api/admin/me', { headers: getAuthHeaders() });
       if (res.ok) {
         const user = await res.json();
         onAuthenticated(user);
@@ -445,6 +453,9 @@
       }
 
       const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('fd_admin_token', data.token);
+      }
       onAuthenticated({ username });
       showToast('Welcome back, ' + username, 'success');
     } catch (err) {
@@ -459,8 +470,9 @@
 
   async function handleLogout() {
     try {
-      await fetch('/api/admin/logout', { method: 'POST' });
+      await fetch('/api/admin/logout', { method: 'POST', headers: getAuthHeaders() });
     } catch (e) {}
+    localStorage.removeItem('fd_admin_token');
     state.user = null;
     showToast('Signed out of admin session', 'info');
     showLoginModal();
@@ -500,7 +512,7 @@
   // Dashboard Stats
   async function loadDashboardStats() {
     try {
-      const res = await fetch('/api/admin/stats');
+      const res = await fetch('/api/admin/stats', { headers: getAuthHeaders() });
       if (!res.ok) return;
       const stats = await res.json();
 
@@ -530,7 +542,7 @@
   // Filter Options
   async function loadFilterOptions() {
     try {
-      const res = await fetch('/api/admin/filters');
+      const res = await fetch('/api/admin/filters', { headers: getAuthHeaders() });
       if (!res.ok) return;
       const filters = await res.json();
       state.filterOptions = filters;
@@ -590,7 +602,7 @@
     });
 
     try {
-      const res = await fetch(`/api/admin/tables/${table}?${params.toString()}`);
+      const res = await fetch(`/api/admin/tables/${table}?${params.toString()}`, { headers: getAuthHeaders() });
       if (!res.ok) {
         el.tableBody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-danger">Failed to load data from server</td></tr>';
         return;
@@ -707,7 +719,7 @@
     el.recordModalTitle.textContent = `Edit Record #${recordId} (${meta.title})`;
 
     try {
-      const res = await fetch(`/api/admin/tables/${state.activeTable}/${recordId}`);
+      const res = await fetch(`/api/admin/tables/${state.activeTable}/${recordId}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error('Failed to fetch record');
       const data = await res.json();
       renderModalFields(data);
@@ -764,7 +776,7 @@
     try {
       const res = await fetch(url, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload)
       });
 
@@ -801,7 +813,8 @@
 
     try {
       const res = await fetch(`/api/admin/tables/${state.activeTable}/${recordId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getAuthHeaders()
       });
 
       if (!res.ok) {
@@ -828,18 +841,120 @@
     // Show loading banner
     showToast(`Analyzing schema for ${file.name}...`, 'info');
 
+    // Client-side pre-analysis for JSON / GeoJSON files (instant & avoids Vercel payload limits)
+    let clientPreview = null;
+    const isJsonFile = file.name.toLowerCase().endsWith('.json') || file.name.toLowerCase().endsWith('.geojson');
+
+    if (isJsonFile) {
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) {
+          const features = parsed.features;
+          const colsSet = new Set();
+          const sampleRows = [];
+          for (let i = 0; i < features.length; i++) {
+            const props = features[i].properties || {};
+            Object.keys(props).forEach(k => {
+              if (!k.startsWith('_')) colsSet.add(k);
+            });
+            if (i < 6) sampleRows.push(props);
+          }
+          const detectedCols = Array.from(colsSet).sort();
+          const isCs = file.name.toLowerCase().includes('cs') && !file.name.toLowerCase().includes('rs');
+          const recTable = isCs ? 'cs_plots' : 'rs_plots';
+          const targetFields = TABLE_META[recTable]?.fields?.map(f => f.name) || [
+            'plot_no', 'rs_uid', 'uid', 'mouza', 'jl_no', 'beat_name', 'area_acre'
+          ];
+          const mapping = {};
+          targetFields.forEach(tf => {
+            const tfLower = tf.toLowerCase();
+            for (const sc of detectedCols) {
+              const scLower = sc.toLowerCase();
+              if (scLower === tfLower) {
+                mapping[tf] = sc;
+                break;
+              }
+              if (tf === 'rs_uid' && ['uid2', 'uid_2', 'rs_uid'].includes(scLower)) {
+                mapping[tf] = sc;
+                break;
+              }
+              if ((tf === 'uid' || tf === 'cs_uid') && ['uid', 'cs_uid', 'uid1'].includes(scLower)) {
+                mapping[tf] = sc;
+                break;
+              }
+              if (tf === 'plot_no' && ['plot', 'plot_no', 'rs_plot', 'cs_plot', 'plotno'].includes(scLower)) {
+                mapping[tf] = sc;
+                break;
+              }
+            }
+          });
+
+          clientPreview = {
+            filename: file.name,
+            file_type: 'gis',
+            total_rows: features.length,
+            compatible_tables: [
+              { value: 'rs_plots', label: 'RS Plot Boundary (GIS Layer)', is_gis: true },
+              { value: 'cs_plots', label: 'CS Plot Boundary (GIS Layer)', is_gis: true }
+            ],
+            recommended_table: recTable,
+            selected_table: recTable,
+            target_table: recTable,
+            available_target_fields: targetFields,
+            detected_fields: detectedCols,
+            columns_detected: detectedCols,
+            suggested_mapping: mapping,
+            columns_mapped: mapping,
+            preview_rows: sampleRows
+          };
+        }
+      } catch (err) {
+        console.warn('Local GeoJSON pre-analysis note:', err);
+      }
+    }
+
+    // If file is large (> 4MB) and clientPreview succeeded, use it directly to bypass serverless payload limits
+    if (file.size > 4 * 1024 * 1024 && clientPreview) {
+      state.wizard.previewData = clientPreview;
+      state.wizard.selectedTable = clientPreview.selected_table;
+      state.wizard.mode = 'append';
+      state.wizard.mapping = Object.assign({}, clientPreview.suggested_mapping);
+      openWizardModal(clientPreview);
+      showToast(`Analyzed ${clientPreview.total_rows.toLocaleString()} features directly in browser`, 'success');
+      return;
+    }
+
+    // Server preview with client fallback
     const fd = new FormData();
     fd.append('file', file);
 
     try {
       const res = await fetch('/api/admin/upload/preview', {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: fd
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        showToast(err.detail || 'File schema preview failed', 'error');
+        if (clientPreview) {
+          state.wizard.previewData = clientPreview;
+          state.wizard.selectedTable = clientPreview.selected_table;
+          state.wizard.mode = 'append';
+          state.wizard.mapping = Object.assign({}, clientPreview.suggested_mapping);
+          openWizardModal(clientPreview);
+          showToast(`Analyzed ${clientPreview.total_rows.toLocaleString()} features locally`, 'info');
+          return;
+        }
+
+        let errMsg = 'File schema preview failed';
+        try {
+          const err = await res.json();
+          errMsg = err.detail || errMsg;
+        } catch (_) {
+          errMsg = res.status === 413 ? 'File too large (> 4.5 MB)' : `Server error HTTP ${res.status}`;
+        }
+        showToast(errMsg, 'error');
         return;
       }
 
@@ -851,7 +966,16 @@
 
       openWizardModal(preview);
     } catch (e) {
-      showToast('Error analyzing file upload', 'error');
+      if (clientPreview) {
+        state.wizard.previewData = clientPreview;
+        state.wizard.selectedTable = clientPreview.selected_table;
+        state.wizard.mode = 'append';
+        state.wizard.mapping = Object.assign({}, clientPreview.suggested_mapping);
+        openWizardModal(clientPreview);
+        showToast(`Analyzed ${clientPreview.total_rows.toLocaleString()} features locally`, 'info');
+      } else {
+        showToast('Error analyzing file upload: ' + (e.message || 'Network error'), 'error');
+      }
     }
   }
 
@@ -895,6 +1019,18 @@
     const newTarget = e.target.value;
     state.wizard.selectedTable = newTarget;
 
+    // If GIS table switch, update target fields locally
+    if (state.wizard.previewData && state.wizard.previewData.file_type === 'gis') {
+      const targetFields = TABLE_META[newTarget]?.fields?.map(f => f.name) || [
+        'plot_no', 'rs_uid', 'uid', 'mouza', 'jl_no', 'beat_name', 'area_acre'
+      ];
+      state.wizard.previewData.available_target_fields = targetFields;
+      state.wizard.previewData.selected_table = newTarget;
+      renderWizardMappingRows();
+      renderWizardSamplePreview();
+      return;
+    }
+
     // Re-fetch preview with specific target table
     const fd = new FormData();
     fd.append('file', state.wizard.file);
@@ -903,6 +1039,7 @@
     try {
       const res = await fetch('/api/admin/upload/preview', {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: fd
       });
       if (res.ok) {
@@ -1009,12 +1146,19 @@
     try {
       const res = await fetch('/api/admin/upload/commit', {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: fd
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        showToast(err.detail || 'Ingestion failed', 'error');
+        let errMsg = 'Ingestion failed';
+        try {
+          const err = await res.json();
+          errMsg = err.detail || errMsg;
+        } catch (_) {
+          errMsg = res.status === 413 ? 'Payload too large (> 4.5 MB)' : `Server error HTTP ${res.status}`;
+        }
+        showToast(errMsg, 'error');
         return;
       }
 
@@ -1027,7 +1171,7 @@
       // Automatically switch to the ingested table view
       switchTab(targetTable);
     } catch (e) {
-      showToast('Network error during ingestion commit', 'error');
+      showToast('Network error during ingestion commit: ' + (e.message || ''), 'error');
     } finally {
       if (btnText) btnText.style.display = 'inline-block';
       if (btnSpinner) btnSpinner.style.display = 'none';
@@ -1041,7 +1185,7 @@
     el.rebuildSnapshotsBtn.innerHTML = '<span>Rebuilding snapshots...</span>';
 
     try {
-      const res = await fetch('/api/admin/cache/rebuild', { method: 'POST' });
+      const res = await fetch('/api/admin/cache/rebuild', { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
         showToast('All snapshot files in data/cache/ rebuilt & primed!', 'success');
       } else {
@@ -1057,7 +1201,7 @@
 
   async function handleClearCache() {
     try {
-      const res = await fetch('/api/admin/cache/clear', { method: 'POST' });
+      const res = await fetch('/api/admin/cache/clear', { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
         showToast('In-memory cache cleared. Fresh data will be fetched.', 'success');
       }
