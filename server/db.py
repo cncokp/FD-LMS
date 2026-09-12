@@ -100,6 +100,94 @@ def init_disk_cache():
 init_disk_cache()
 
 
+def invalidate_cache(dataset: Optional[str] = None):
+    """Invalidates in-memory caches so subsequent requests fetch/rebuild fresh data."""
+    global _cs_cache_bytes, _cs_gzip_bytes, _cs_etag
+    global _encroach_cache_bytes, _encroach_gzip_bytes, _encroach_etag
+    global _bulk_dossier_cache_bytes, _bulk_dossier_gzip_bytes, _bulk_dossier_etag
+
+    if dataset == "cs_plots":
+        _cs_cache_bytes = None
+        _cs_gzip_bytes = None
+        _cs_etag = None
+    elif dataset == "encroachments":
+        _encroach_cache_bytes = None
+        _encroach_gzip_bytes = None
+        _encroach_etag = None
+    elif dataset in ("dossier", "parcel_info"):
+        _bulk_dossier_cache_bytes = None
+        _bulk_dossier_gzip_bytes = None
+        _bulk_dossier_etag = None
+    elif dataset is None:
+        _encroach_cache_bytes = None
+        _encroach_gzip_bytes = None
+        _encroach_etag = None
+        _bulk_dossier_cache_bytes = None
+        _bulk_dossier_gzip_bytes = None
+        _bulk_dossier_etag = None
+    print(f"[FD-LMS] In-memory cache invalidated for: {dataset or 'DOSSIER/ENCROACHMENTS'}")
+
+
+def rebuild_snapshots() -> Dict[str, Any]:
+    """Rebuilds data/cache/*.gz snapshot files and re-primes in-memory gzip buffers."""
+    global _cs_cache_bytes, _cs_gzip_bytes, _cs_etag
+    global _encroach_cache_bytes, _encroach_gzip_bytes, _encroach_etag
+    global _bulk_dossier_cache_bytes, _bulk_dossier_gzip_bytes, _bulk_dossier_etag
+
+    results = {}
+    try:
+        # 1. CS Plots: retain existing loaded snapshot bytes
+        cs_path = os.path.join(CACHE_DIR, "cs_plots.geojson.gz")
+        if _cs_gzip_bytes is None and os.path.exists(cs_path):
+            with open(cs_path, "rb") as f:
+                _cs_gzip_bytes = f.read()
+                _cs_cache_bytes = gzip.decompress(_cs_gzip_bytes)
+        elif _cs_cache_bytes is not None:
+            _cs_gzip_bytes = gzip.compress(_cs_cache_bytes, compresslevel=6)
+            with open(cs_path, "wb") as f:
+                f.write(_cs_gzip_bytes)
+        _cs_etag = _calc_etag(_cs_gzip_bytes) if _cs_gzip_bytes else None
+        results["cs_plots"] = {"bytes": len(_cs_gzip_bytes) if _cs_gzip_bytes else 0, "status": "saved"}
+    except Exception as e:
+        results["cs_plots"] = {"error": str(e)}
+
+    try:
+        # 2. Bulk Dossier: serialize latest records
+        import server.admin_db as admin_db
+        admin_db._init_snapshot_records_if_needed()
+        p_rows = admin_db._snapshot_records.get("parcel_info", [])
+        e_rows = admin_db._snapshot_records.get("encroachment_info", [])
+        raw_bd = _build_bulk_payload(p_rows, e_rows)
+        gz_bd = gzip.compress(raw_bd, compresslevel=6)
+        bd_path = os.path.join(CACHE_DIR, "bulk_dossier.json.gz")
+        with open(bd_path, "wb") as f:
+            f.write(gz_bd)
+        _bulk_dossier_gzip_bytes = gz_bd
+        _bulk_dossier_cache_bytes = raw_bd
+        _bulk_dossier_etag = _calc_etag(gz_bd)
+        results["bulk_dossier"] = {"bytes": len(gz_bd), "status": "saved"}
+    except Exception as e:
+        results["bulk_dossier"] = {"error": str(e)}
+
+    try:
+        # 3. Encroachments: serialize latest encroachments
+        en_path = os.path.join(CACHE_DIR, "encroachments.geojson.gz")
+        if _encroach_gzip_bytes is None and os.path.exists(en_path):
+            with open(en_path, "rb") as f:
+                _encroach_gzip_bytes = f.read()
+                _encroach_cache_bytes = gzip.decompress(_encroach_gzip_bytes)
+        elif _encroach_cache_bytes is not None:
+            _encroach_gzip_bytes = gzip.compress(_encroach_cache_bytes, compresslevel=6)
+            with open(en_path, "wb") as f:
+                f.write(_encroach_gzip_bytes)
+        _encroach_etag = _calc_etag(_encroach_gzip_bytes) if _encroach_gzip_bytes else None
+        results["encroachments"] = {"bytes": len(_encroach_gzip_bytes) if _encroach_gzip_bytes else 0, "status": "saved"}
+    except Exception as e:
+        results["encroachments"] = {"error": str(e)}
+
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Connection helpers
 # ---------------------------------------------------------------------------
@@ -129,7 +217,7 @@ def _supabase_request(
     if headers_extra:
         headers.update(headers_extra)
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    return urllib.request.urlopen(req, timeout=35)
+    return urllib.request.urlopen(req, timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -766,6 +854,14 @@ def get_bulk_dossier_json_bytes() -> bytes:
             return _build_bulk_payload(parcel_rows, encroach_rows)
         except Exception as e:
             print(f"Bulk dossier Cloud API error: {e}")
+
+    bulk_path = os.path.join(CACHE_DIR, "bulk_dossier.json.gz")
+    if os.path.exists(bulk_path):
+        try:
+            with open(bulk_path, "rb") as f:
+                return gzip.decompress(f.read())
+        except Exception:
+            pass
 
     return json.dumps({"generated_at": int(time.time()), "by_uid": {}},
                       separators=(",", ":")).encode("utf-8")
