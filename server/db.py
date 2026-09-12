@@ -44,6 +44,10 @@ _bulk_dossier_cache_bytes: Optional[bytes] = None
 _bulk_dossier_gzip_bytes: Optional[bytes] = None
 _bulk_dossier_etag: Optional[str] = None
 
+_rs_cache_bytes: Optional[bytes] = None
+_rs_gzip_bytes: Optional[bytes] = None
+_rs_etag: Optional[str] = None
+
 def _calc_etag(data: bytes) -> str:
     return f'"{hashlib.md5(data).hexdigest()}"'
 
@@ -62,6 +66,7 @@ def init_disk_cache():
     global _cs_cache_bytes, _cs_gzip_bytes, _cs_etag
     global _bulk_dossier_cache_bytes, _bulk_dossier_gzip_bytes, _bulk_dossier_etag
     global _encroach_cache_bytes, _encroach_gzip_bytes, _encroach_etag
+    global _rs_cache_bytes, _rs_gzip_bytes, _rs_etag
 
     # 1. CS Plots
     cs_path = os.path.join(CACHE_DIR, "cs_plots.geojson.gz")
@@ -99,6 +104,18 @@ def init_disk_cache():
         except Exception as e:
             print(f"[FD-LMS] Encroachments disk cache load error: {e}")
 
+    # 4. RS Plots
+    rs_path = os.path.join(CACHE_DIR, "rs_plots.geojson.gz")
+    if os.path.exists(rs_path) and _rs_cache_bytes is None:
+        try:
+            with open(rs_path, "rb") as f:
+                _rs_gzip_bytes = f.read()
+            _rs_cache_bytes = gzip.decompress(_rs_gzip_bytes)
+            _rs_etag = _calc_etag(_rs_gzip_bytes)
+            print(f"[FD-LMS] RS plots loaded from disk snapshot: {len(_rs_cache_bytes):,} bytes [OK]")
+        except Exception as e:
+            print(f"[FD-LMS] RS plots disk cache load error: {e}")
+
 # Pre-load immediately on import
 init_disk_cache()
 
@@ -106,6 +123,7 @@ init_disk_cache()
 def invalidate_cache(dataset: Optional[str] = None):
     """Invalidates in-memory caches so subsequent requests fetch/rebuild fresh data."""
     global _cs_cache_bytes, _cs_gzip_bytes, _cs_etag
+    global _rs_cache_bytes, _rs_gzip_bytes, _rs_etag
     global _encroach_cache_bytes, _encroach_gzip_bytes, _encroach_etag
     global _bulk_dossier_cache_bytes, _bulk_dossier_gzip_bytes, _bulk_dossier_etag
 
@@ -113,6 +131,10 @@ def invalidate_cache(dataset: Optional[str] = None):
         _cs_cache_bytes = None
         _cs_gzip_bytes = None
         _cs_etag = None
+    elif dataset == "rs_plots":
+        _rs_cache_bytes = None
+        _rs_gzip_bytes = None
+        _rs_etag = None
     elif dataset == "encroachments":
         _encroach_cache_bytes = None
         _encroach_gzip_bytes = None
@@ -134,6 +156,7 @@ def invalidate_cache(dataset: Optional[str] = None):
 def rebuild_snapshots() -> Dict[str, Any]:
     """Rebuilds data/cache/*.gz snapshot files and re-primes in-memory gzip buffers."""
     global _cs_cache_bytes, _cs_gzip_bytes, _cs_etag
+    global _rs_cache_bytes, _rs_gzip_bytes, _rs_etag
     global _encroach_cache_bytes, _encroach_gzip_bytes, _encroach_etag
     global _bulk_dossier_cache_bytes, _bulk_dossier_gzip_bytes, _bulk_dossier_etag
 
@@ -187,6 +210,28 @@ def rebuild_snapshots() -> Dict[str, Any]:
         results["encroachments"] = {"bytes": len(_encroach_gzip_bytes) if _encroach_gzip_bytes else 0, "status": "saved"}
     except Exception as e:
         results["encroachments"] = {"error": str(e)}
+
+    try:
+        # 4. RS Plots: retain existing loaded snapshot bytes or save empty FeatureCollection
+        rs_path = os.path.join(CACHE_DIR, "rs_plots.geojson.gz")
+        if _rs_gzip_bytes is None and os.path.exists(rs_path):
+            with open(rs_path, "rb") as f:
+                _rs_gzip_bytes = f.read()
+                _rs_cache_bytes = gzip.decompress(_rs_gzip_bytes)
+        elif _rs_cache_bytes is not None:
+            _rs_gzip_bytes = gzip.compress(_rs_cache_bytes, compresslevel=6)
+            with open(rs_path, "wb") as f:
+                f.write(_rs_gzip_bytes)
+        else:
+            empty = b'{"type":"FeatureCollection","count":0,"bounds":null,"features":[]}'
+            _rs_cache_bytes = empty
+            _rs_gzip_bytes = gzip.compress(empty, compresslevel=6)
+            with open(rs_path, "wb") as f:
+                f.write(_rs_gzip_bytes)
+        _rs_etag = _calc_etag(_rs_gzip_bytes) if _rs_gzip_bytes else None
+        results["rs_plots"] = {"bytes": len(_rs_gzip_bytes) if _rs_gzip_bytes else 0, "status": "saved"}
+    except Exception as e:
+        results["rs_plots"] = {"error": str(e)}
 
     return results
 
@@ -465,7 +510,36 @@ def get_rs_plots_json_bytes(
     uid: Optional[str] = None,
     limit: int = 35000
 ) -> bytes:
-    return b'{"type":"FeatureCollection","count":0,"bounds":null,"features":[]}'
+    global _rs_cache_bytes
+    is_unfiltered = not bbox and not plot_no and not uid
+    if is_unfiltered and _rs_cache_bytes is not None:
+        return _rs_cache_bytes
+
+    rs_path = os.path.join(CACHE_DIR, "rs_plots.geojson.gz")
+    if os.path.exists(rs_path):
+        try:
+            with open(rs_path, "rb") as f:
+                decomp = gzip.decompress(f.read())
+                if is_unfiltered:
+                    _rs_cache_bytes = decomp
+                return decomp
+        except Exception as e:
+            print(f"[FD-LMS] RS plots cache read error: {e}")
+
+    empty = b'{"type":"FeatureCollection","count":0,"bounds":null,"features":[]}'
+    if is_unfiltered:
+        _rs_cache_bytes = empty
+    return empty
+
+
+def get_rs_plots_gzip_and_etag() -> Tuple[bytes, str]:
+    global _rs_gzip_bytes, _rs_etag
+    if _rs_gzip_bytes is not None and _rs_etag is not None:
+        return _rs_gzip_bytes, _rs_etag
+    raw = get_rs_plots_json_bytes()
+    _rs_gzip_bytes = gzip.compress(raw, compresslevel=6)
+    _rs_etag = _calc_etag(_rs_gzip_bytes)
+    return _rs_gzip_bytes, _rs_etag
 
 
 # ---------------------------------------------------------------------------
@@ -684,6 +758,171 @@ def get_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
     return get_cs_plot_dossier(plot_id)
 
 
+def _build_rs_parcel_dossier_payload(
+    plot: Dict[str, Any],
+    parcel_records: List[Dict[str, Any]],
+    encroachment_records: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    bounds     = [plot.get("minx", 0), plot.get("miny", 0), plot.get("maxx", 0), plot.get("maxy", 0)]
+    plot_uid   = str(plot.get("uid") or plot.get("rs_uid") or "")
+    beat_name  = plot.get("beat_name") or ""
+
+    encroach_list = []
+    if encroachment_records:
+        for er in encroachment_records:
+            encroach_list.append({
+                "encroacher_name":      er.get("encroacher_name"),
+                "cs_plot_no":           er.get("cs_plot_no"),
+                "rs_plot_no":           er.get("rs_plot_no"),
+                "rs_khatian":           er.get("rs_khatian"),
+                "sec_20":               er.get("sec_20"),
+                "sec_6":                er.get("sec_6"),
+                "encroached_area_acre": er.get("encroached_area_acre"),
+                "structure_type":       er.get("structure_type"),
+                "action_taken":         er.get("action_taken")
+            })
+
+    has_encroachment     = len(encroach_list) > 0
+    total_encroached_acre = round(
+        sum(float(r["encroached_area_acre"]) for r in encroach_list if r.get("encroached_area_acre") is not None),
+        4
+    ) if has_encroachment else 0.0
+
+    encroachment_payload = {
+        "has_encroachment":     has_encroachment,
+        "count":                len(encroach_list),
+        "total_encroached_acre": total_encroached_acre,
+        "records":              encroach_list
+    }
+
+    if not parcel_records:
+        return {
+            "plot": {
+                "id": plot.get("id"), "uid": plot_uid, "rs_uid": plot_uid, "plot_no": plot.get("plot_no"),
+                "mouza": plot.get("mouza") or "N/A", "jl_no": plot.get("jl_no") or "N/A",
+                "area_acre": plot.get("area_acre"), "beat_name": beat_name or None,
+                "type": "RS Revisional Survey"
+            },
+            "bounds": bounds,
+            "parcel_info": {
+                "has_record": False, "rs_uid": plot_uid, "rs_plot_no": plot.get("plot_no"),
+                "mouza": plot.get("mouza"), "rs_jl": plot.get("jl_no"), "beat_name": beat_name,
+                "range": None, "total_area": plot.get("area_acre"),
+                "total_area_fd": None, "total_area_others": None, "linked_cs_plots": []
+            },
+            "encroachment": encroachment_payload
+        }
+
+    first_rec       = parcel_records[0]
+    effective_beat  = first_rec.get("beat_name") or beat_name
+    range_val       = first_rec.get("range")
+    rs_plot_no      = first_rec.get("rs_plot_no") or plot.get("plot_no")
+    mouza           = first_rec.get("mouza") or plot.get("mouza") or "N/A"
+    rs_jl           = first_rec.get("rs_jl") or plot.get("jl_no") or "N/A"
+
+    legal_statuses  = list(dict.fromkeys(r.get("legal_status") for r in parcel_records if r.get("legal_status")))
+    khatians        = list(dict.fromkeys(r.get("khatian_no")   for r in parcel_records if r.get("khatian_no")))
+    remarks_list    = list(dict.fromkeys(r.get("remarks")       for r in parcel_records if r.get("remarks")))
+
+    fd_areas        = [r["area_fd"]     for r in parcel_records if r.get("area_fd")     is not None]
+    others_areas    = [r["area_others"] for r in parcel_records if r.get("area_others") is not None]
+    total_area_fd   = round(sum(fd_areas),     4) if fd_areas     else None
+    total_area_others = round(sum(others_areas), 4) if others_areas else None
+
+    rs_totals       = [r["total_area"] for r in parcel_records if r.get("total_area") is not None]
+    recorded_total  = round(sum(rs_totals), 4) if rs_totals else plot.get("area_acre")
+
+    linked_cs = []
+    for r in parcel_records:
+        if r.get("cs_plot_no"):
+            linked_cs.append({
+                "cs_plot_no": r.get("cs_plot_no"), "cs_jl": r.get("cs_jl"),
+                "cs_uid": r.get("cs_uid"),
+                "cs_land_acre": r.get("cs_land_acre"),
+                "legal_status": r.get("legal_status"), "khatian_no": r.get("khatian_no"),
+                "area_fd": r.get("area_fd"), "area_others": r.get("area_others"),
+                "total_area": r.get("total_area"), "remarks": r.get("remarks")
+            })
+
+    return {
+        "plot": {
+            "id": plot.get("id"), "uid": plot_uid, "rs_uid": plot_uid, "plot_no": plot.get("plot_no"),
+            "mouza": plot.get("mouza") or "N/A", "jl_no": plot.get("jl_no") or "N/A",
+            "area_acre": plot.get("area_acre"), "beat_name": effective_beat,
+            "type": "RS Revisional Survey"
+        },
+        "bounds": bounds,
+        "parcel_info": {
+            "has_record": True, "rs_uid": first_rec.get("rs_uid") or plot_uid,
+            "rs_plot_no": rs_plot_no, "mouza": mouza, "rs_jl": rs_jl,
+            "beat_name": effective_beat, "range": range_val,
+            "total_area": recorded_total, "total_area_fd": total_area_fd,
+            "total_area_others": total_area_others,
+            "legal_status": ", ".join(legal_statuses) if legal_statuses else None,
+            "khatian_no":   ", ".join(khatians)       if khatians       else None,
+            "remarks":      "; ".join(remarks_list)   if remarks_list   else None,
+            "linked_cs_plots": linked_cs
+        },
+        "encroachment": encroachment_payload
+    }
+
+
+def get_rs_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
+    # 1. Attempt from snapshot records
+    import server.admin_db as admin_db
+    admin_db._init_snapshot_records_if_needed()
+    rs_plots = admin_db._snapshot_records.get("rs_plots", [])
+    plot = next((p for p in rs_plots if str(p.get("id")) == str(plot_id)), None)
+
+    if not plot:
+        # Check in _rs_cache_bytes GeoJSON
+        try:
+            raw_geojson = get_rs_plots_json_bytes()
+            data = json.loads(raw_geojson.decode("utf-8"))
+            for f in data.get("features", []):
+                p = f.get("properties", {})
+                if str(p.get("id")) == str(plot_id) or str(f.get("id")) == str(plot_id):
+                    plot = {
+                        "id": p.get("id") or f.get("id"),
+                        "uid": p.get("uid") or p.get("rs_uid") or "",
+                        "rs_uid": p.get("rs_uid") or p.get("uid") or "",
+                        "plot_no": p.get("plot_no") or "",
+                        "mouza": p.get("mouza") or "",
+                        "jl_no": p.get("jl_no") or "",
+                        "beat_name": p.get("beat_name") or "",
+                        "area_acre": p.get("area_acre") or 0.0,
+                        "minx": f.get("bbox", [0,0,0,0])[0] if f.get("bbox") else 0,
+                        "miny": f.get("bbox", [0,0,0,0])[1] if f.get("bbox") else 0,
+                        "maxx": f.get("bbox", [0,0,0,0])[2] if f.get("bbox") else 0,
+                        "maxy": f.get("bbox", [0,0,0,0])[3] if f.get("bbox") else 0,
+                    }
+                    break
+        except Exception:
+            pass
+
+    if not plot:
+        return None
+
+    r_uid = str(plot.get("rs_uid") or plot.get("uid") or "").strip()
+    p_no = str(plot.get("plot_no") or "").strip()
+
+    parcels = admin_db._snapshot_records.get("parcel_info", [])
+    encroachments = admin_db._snapshot_records.get("encroachment_info", [])
+
+    matched_parcels = [
+        r for r in parcels
+        if (r_uid and str(r.get("rs_uid") or "").strip() == r_uid) or
+           (p_no and str(r.get("rs_plot_no") or "").strip() == p_no)
+    ]
+    matched_encroach = [
+        r for r in encroachments
+        if (r_uid and str(r.get("rs_uid") or "").strip() == r_uid) or
+           (p_no and str(r.get("rs_plot_no") or "").strip() == p_no)
+    ]
+
+    return _build_rs_parcel_dossier_payload(plot, matched_parcels, matched_encroach)
+
+
 # ---------------------------------------------------------------------------
 # Bulk Dossier — all parcel_info + encroachment_info in one payload
 # Client stores this in IndexedDB; assembly happens entirely client-side.
@@ -691,19 +930,27 @@ def get_plot_dossier(plot_id: int) -> Optional[Dict[str, Any]]:
 def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> bytes:
     global _bulk_dossier_cache_bytes
 
-    # Group parcel_info rows by cs_uid
+    # Group parcel_info rows by cs_uid and rs_uid
     parcel_by_uid: Dict[str, List[Dict]] = {}
+    parcel_by_rs_uid: Dict[str, List[Dict]] = {}
     for r in parcel_rows:
-        uid = str(r.get("cs_uid") or "")
-        if uid:
-            parcel_by_uid.setdefault(uid, []).append(r)
+        c_uid = str(r.get("cs_uid") or "").strip()
+        r_uid = str(r.get("rs_uid") or "").strip()
+        if c_uid:
+            parcel_by_uid.setdefault(c_uid, []).append(r)
+        if r_uid:
+            parcel_by_rs_uid.setdefault(r_uid, []).append(r)
 
-    # Group encroachment rows by uid
+    # Group encroachment rows by uid/cs_uid and rs_uid
     encroach_by_uid: Dict[str, List[Dict]] = {}
+    encroach_by_rs_uid: Dict[str, List[Dict]] = {}
     for r in encroach_rows:
-        uid = str(r.get("uid") or "")
-        if uid:
-            encroach_by_uid.setdefault(uid, []).append(r)
+        c_uid = str(r.get("uid") or r.get("cs_uid") or "").strip()
+        r_uid = str(r.get("rs_uid") or "").strip()
+        if c_uid:
+            encroach_by_uid.setdefault(c_uid, []).append(r)
+        if r_uid:
+            encroach_by_rs_uid.setdefault(r_uid, []).append(r)
 
     # Collect all uids from both tables
     all_uids = set(parcel_by_uid.keys()) | set(encroach_by_uid.keys())
@@ -788,7 +1035,82 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
             "encroachment":     encroachment,
         }
 
-    payload = json.dumps({"generated_at": int(time.time()), "by_uid": by_uid},
+    # 2. Build by_rs_uid (for RS plots lookup)
+    all_rs_uids = set(parcel_by_rs_uid.keys()) | set(encroach_by_rs_uid.keys())
+    by_rs_uid: Dict[str, Any] = {}
+    for r_uid in all_rs_uids:
+        precs = parcel_by_rs_uid.get(r_uid, [])
+        erecs = encroach_by_rs_uid.get(r_uid, [])
+
+        enc_list = []
+        for er in erecs:
+            enc_list.append({
+                "encroacher_name":      er.get("encroacher_name"),
+                "cs_plot_no":           er.get("cs_plot_no"),
+                "rs_plot_no":           er.get("rs_plot_no"),
+                "rs_khatian":           er.get("rs_khatian"),
+                "sec_20":               er.get("sec_20"),
+                "sec_6":                er.get("sec_6"),
+                "encroached_area_acre": er.get("encroached_area_acre"),
+                "structure_type":       er.get("structure_type"),
+                "action_taken":         er.get("action_taken"),
+            })
+        total_enc = round(
+            sum(float(e["encroached_area_acre"]) for e in enc_list if e.get("encroached_area_acre") is not None), 4
+        ) if enc_list else 0.0
+        encroachment = {
+            "has_encroachment":      bool(enc_list),
+            "count":                 len(enc_list),
+            "total_encroached_acre": total_enc,
+            "records":               enc_list,
+        }
+
+        if not precs:
+            by_rs_uid[r_uid] = {"has_record": False, "encroachment": encroachment}
+            continue
+
+        first          = precs[0]
+        fd_areas       = [r["area_fd"]     for r in precs if r.get("area_fd")     is not None]
+        others_areas   = [r["area_others"] for r in precs if r.get("area_others") is not None]
+        total_area_fd  = round(sum(fd_areas),     4) if fd_areas     else None
+        total_area_oth = round(sum(others_areas), 4) if others_areas else None
+        rs_totals      = [r["total_area"] for r in precs if r.get("total_area") is not None]
+        recorded_total = round(sum(rs_totals), 4) if rs_totals else None
+
+        legal_statuses = list(dict.fromkeys(r.get("legal_status") for r in precs if r.get("legal_status")))
+        khatians       = list(dict.fromkeys(r.get("khatian_no")   for r in precs if r.get("khatian_no")))
+        remarks_list   = list(dict.fromkeys(r.get("remarks")       for r in precs if r.get("remarks")))
+
+        linked_cs = []
+        for r in precs:
+            if r.get("cs_plot_no"):
+                linked_cs.append({
+                    "cs_plot_no":  r.get("cs_plot_no"),   "cs_jl":      r.get("cs_jl"),
+                    "cs_uid":      r.get("cs_uid"),
+                    "cs_land_acre": r.get("cs_land_acre"),
+                    "legal_status": r.get("legal_status"), "khatian_no": r.get("khatian_no"),
+                    "area_fd":     r.get("area_fd"),       "area_others": r.get("area_others"),
+                    "total_area":  r.get("total_area"),    "remarks":     r.get("remarks"),
+                })
+
+        by_rs_uid[r_uid] = {
+            "has_record":        True,
+            "rs_plot_no":        first.get("rs_plot_no"),
+            "mouza":             first.get("mouza"),
+            "rs_jl":             first.get("rs_jl"),
+            "beat_name":         first.get("beat_name"),
+            "range":             first.get("range"),
+            "total_area":        recorded_total,
+            "total_area_fd":     total_area_fd,
+            "total_area_others": total_area_oth,
+            "legal_status":      ", ".join(legal_statuses) if legal_statuses else None,
+            "khatian_no":        ", ".join(khatians)       if khatians       else None,
+            "remarks":           "; ".join(remarks_list)   if remarks_list   else None,
+            "linked_cs_plots":   linked_cs,
+            "encroachment":      encroachment,
+        }
+
+    payload = json.dumps({"generated_at": int(time.time()), "by_uid": by_uid, "by_rs_uid": by_rs_uid},
                          separators=(",", ":")).encode("utf-8")
     _bulk_dossier_cache_bytes = payload
     return payload

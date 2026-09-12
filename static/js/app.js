@@ -185,6 +185,13 @@ function setupLayerToggles() {
     });
   }
 
+  const toggleRsPlots = document.getElementById('toggleRsPlots');
+  if (toggleRsPlots) {
+    toggleRsPlots.addEventListener('change', (e) => {
+      MapEngine.toggleRsPlots(e.target.checked);
+    });
+  }
+
   const toggleBeatBoundaries = document.getElementById('toggleBeatBoundaries');
   if (toggleBeatBoundaries) {
     toggleBeatBoundaries.addEventListener('change', (e) => {

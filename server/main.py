@@ -129,14 +129,32 @@ def get_beat_boundaries():
 
 @app.get("/api/plots")
 @app.get("/api/plots/rs")
-def get_plots(
-    bbox: Optional[str] = Query(None, description="minx,miny,maxx,maxy in EPSG:4326"),
+@app.get("/api/rs_plots/geojson")
+def get_rs_plots_geojson(
+    request: Request,
+    bbox: Optional[str] = Query(None, description="minx,miny,maxx,maxy"),
     plot_no: Optional[str] = Query(None),
     uid: Optional[str] = Query(None),
-    limit: int = Query(35000, le=50000)
+    limit: int = Query(35000, ge=1, le=100000)
 ):
+    is_unfiltered = not bbox and not plot_no and not uid
+    if is_unfiltered:
+        gzip_bytes, etag = db.get_rs_plots_gzip_and_etag()
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600"})
+        return Response(
+            content=gzip_bytes,
+            media_type="application/geo+json",
+            headers={
+                "Content-Encoding": "gzip",
+                "ETag": etag,
+                "Cache-Control": "public, max-age=86400, stale-while-revalidate=3600",
+                "Vary": "Accept-Encoding"
+            }
+        )
+
     json_bytes = db.get_rs_plots_json_bytes(bbox=bbox, plot_no=plot_no, uid=uid, limit=limit)
-    return Response(content=json_bytes, media_type="application/json")
+    return Response(content=json_bytes, media_type="application/geo+json")
 
 
 @app.get("/api/plots/cs")
@@ -194,6 +212,15 @@ def get_cs_plot_dossier(plot_id: int):
     dossier = db.get_cs_plot_dossier(plot_id)
     if not dossier:
         raise HTTPException(status_code=404, detail="CS Plot not found")
+    return dossier
+
+
+@app.get("/api/plots/rs/{plot_id}")
+@app.get("/api/rs_plots/{plot_id}/dossier")
+def get_rs_plot_dossier(plot_id: int):
+    dossier = db.get_rs_plot_dossier(plot_id)
+    if not dossier:
+        raise HTTPException(status_code=404, detail="RS Plot not found")
     return dossier
 
 
@@ -368,7 +395,7 @@ def admin_delete_record(
 @app.post("/api/admin/upload/preview")
 async def admin_upload_preview(
     file: UploadFile = File(...),
-    target_table: str = Form(...),
+    target_table: Optional[str] = Form(None),
     current_user: dict = Depends(auth.get_current_admin)
 ):
     contents = await file.read()

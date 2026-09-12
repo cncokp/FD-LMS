@@ -1,5 +1,7 @@
 /**
  * FD-LMS Admin Portal Single Page Application Logic
+ * Supports GIS Spatial Layers (Fixed Geometries) and Tabular Data Tables (Editable),
+ * with Interactive Post-Upload Dynamic Mapping Wizard.
  */
 
 (function() {
@@ -28,11 +30,12 @@
       beats: [],
       mouzas: []
     },
-    upload: {
+    wizard: {
       file: null,
-      targetTable: 'parcel_info',
+      previewData: null,
+      selectedTable: 'parcel_info',
       mode: 'append',
-      preview: null
+      mapping: {}
     },
     pendingDelete: null,
     editingRecordId: null
@@ -40,12 +43,41 @@
 
   // Table Configuration Metadata
   const TABLE_META = {
+    cs_plots: {
+      title: 'CS Plot Boundaries',
+      subtitle: 'Cadastral Survey (CS) polygon boundaries and spatial attributes (Fixed GIS Layer)',
+      isGis: true,
+      fields: [
+        { name: 'plot_no', label: 'CS Plot No', type: 'text', required: true },
+        { name: 'mouza', label: 'Mouza', type: 'text', required: true },
+        { name: 'jl_no', label: 'CS JL No', type: 'text' },
+        { name: 'beat_name', label: 'Beat Name', type: 'text', required: true },
+        { name: 'area_acre', label: 'Calculated Area (Acres)', type: 'number', step: '0.0001' },
+        { name: 'uid', label: 'Unique Identifier (UID)', type: 'text' }
+      ]
+    },
+    rs_plots: {
+      title: 'RS Plot Boundaries',
+      subtitle: 'Revisional Survey (RS) polygon boundaries and spatial attributes (Fixed GIS Layer)',
+      isGis: true,
+      fields: [
+        { name: 'plot_no', label: 'RS Plot No', type: 'text', required: true },
+        { name: 'mouza', label: 'Mouza', type: 'text', required: true },
+        { name: 'jl_no', label: 'RS JL No', type: 'text' },
+        { name: 'beat_name', label: 'Beat Name', type: 'text', required: true },
+        { name: 'area_acre', label: 'Calculated Area (Acres)', type: 'number', step: '0.0001' },
+        { name: 'rs_uid', label: 'RS UID', type: 'text' }
+      ]
+    },
     parcel_info: {
-      title: 'Parcels & Legal Status',
-      subtitle: 'Official record of CS & RS plots, Forest Department areas, Khatians, and Gazette legal status',
+      title: 'Parcel Information',
+      subtitle: 'Official register of CS & RS plots, Forest Department areas, Khatians, and Gazette legal status (Editable)',
+      isGis: false,
       fields: [
         { name: 'cs_plot_no', label: 'CS Plot No', type: 'text', required: true },
         { name: 'rs_plot_no', label: 'RS Plot No', type: 'text' },
+        { name: 'cs_uid', label: 'CS UID', type: 'text' },
+        { name: 'rs_uid', label: 'RS UID', type: 'text' },
         { name: 'mouza', label: 'Mouza', type: 'text', required: true },
         { name: 'cs_jl', label: 'CS JL No', type: 'text' },
         { name: 'rs_jl', label: 'RS JL No', type: 'text' },
@@ -60,30 +92,21 @@
       ]
     },
     encroachment_info: {
-      title: 'Encroachment Cases',
-      subtitle: 'Documented illegal occupations, unauthorized structures, and eviction actions taken',
+      title: 'Encroachment Details',
+      subtitle: 'Documented illegal occupations, unauthorized structures, and eviction actions (Editable)',
+      isGis: false,
       fields: [
         { name: 'encroacher_name', label: 'Encroacher Name & Address', type: 'text', required: true },
         { name: 'cs_plot_no', label: 'CS Plot No', type: 'text', required: true },
         { name: 'rs_plot_no', label: 'RS Plot No', type: 'text' },
+        { name: 'cs_uid', label: 'CS UID', type: 'text' },
+        { name: 'rs_uid', label: 'RS UID', type: 'text' },
         { name: 'encroached_area_acre', label: 'Encroached Area (Acres)', type: 'number', step: '0.0001', required: true },
         { name: 'structure_type', label: 'Structure / Land Use Type', type: 'text' },
         { name: 'action_taken', label: 'Action Taken / Legal Case', type: 'text' },
         { name: 'rs_khatian', label: 'RS Khatian', type: 'text' },
         { name: 'sec_20', label: 'Sec 20 Status', type: 'text' },
         { name: 'sec_6', label: 'Sec 6 Status', type: 'text' }
-      ]
-    },
-    cs_plots: {
-      title: 'Cadastral CS Plots',
-      subtitle: 'GIS polygon boundary records and spatial metadata',
-      fields: [
-        { name: 'plot_no', label: 'Plot No', type: 'text', required: true },
-        { name: 'mouza', label: 'Mouza', type: 'text', required: true },
-        { name: 'jl_no', label: 'JL No', type: 'text' },
-        { name: 'beat_name', label: 'Beat Name', type: 'text', required: true },
-        { name: 'area_acre', label: 'Calculated Area (Acres)', type: 'number', step: '0.0001' },
-        { name: 'uid', label: 'Unique Identifier (UID)', type: 'text' }
       ]
     }
   };
@@ -111,17 +134,20 @@
     statEncroachments: document.getElementById('stat-encroachments'),
     statEncroachedAcre: document.getElementById('stat-encroached-acre'),
     statPlots: document.getElementById('stat-plots'),
+    statRsPlots: document.getElementById('stat-rs-plots'),
     beatDistributionList: document.getElementById('beat-distribution-list'),
     refreshStatsBtn: document.getElementById('refresh-stats-btn'),
 
     // Table view
     tableViewTitle: document.getElementById('table-view-title'),
     tableViewSubtitle: document.getElementById('table-view-subtitle'),
+    tableGisBadge: document.getElementById('table-gis-badge'),
     tableAddBtn: document.getElementById('table-add-btn'),
+    tableAddBtnText: document.getElementById('table-add-btn-text'),
     tableSearchInput: document.getElementById('table-search-input'),
     tableBeatFilter: document.getElementById('table-beat-filter'),
     tableMouzaFilter: document.getElementById('table-mouza-filter'),
-    tablePageSizeFilter: document.getElementById('table-pagesize-filter'),
+    tablePagesizeFilter: document.getElementById('table-pagesize-filter'),
     tableHeaderRow: document.getElementById('table-header-row'),
     tableBody: document.getElementById('table-body'),
     paginationInfo: document.getElementById('pagination-info'),
@@ -129,274 +155,280 @@
     pagePrevBtn: document.getElementById('page-prev-btn'),
     pageNextBtn: document.getElementById('page-next-btn'),
 
-    // Uploader
-    uploadTargetTable: document.getElementById('upload-target-table'),
-    uploadMode: document.getElementById('upload-mode'),
+    // Record modal
+    recordModal: document.getElementById('record-modal'),
+    recordModalTitle: document.getElementById('record-modal-title'),
+    recordForm: document.getElementById('record-form'),
+    modalFormFields: document.getElementById('modal-form-fields'),
+    modalCancelBtn: document.getElementById('modal-cancel-btn'),
+    modalCloseBtn: document.getElementById('modal-close-btn'),
+
+    // Delete modal
+    deleteModal: document.getElementById('delete-modal'),
+    deleteRecordDesc: document.getElementById('delete-record-desc'),
+    deleteCancelBtn: document.getElementById('delete-cancel-btn'),
+    deleteConfirmBtn: document.getElementById('delete-confirm-btn'),
+    deleteModalCloseBtn: document.getElementById('delete-modal-close-btn'),
+
+    // Mapping Wizard Modal
+    mappingWizardModal: document.getElementById('mapping-wizard-modal'),
+    wizardCloseBtn: document.getElementById('wizard-close-btn'),
+    wizardCancelBtn: document.getElementById('wizard-cancel-btn'),
+    wizardConfirmBtn: document.getElementById('wizard-confirm-btn'),
+    wizardFilename: document.getElementById('wizard-filename'),
+    wizardFiletypeBadge: document.getElementById('wizard-filetype-badge'),
+    wizardRowsCount: document.getElementById('wizard-rows-count'),
+    wizardTargetTable: document.getElementById('wizard-target-table'),
+    wizardMode: document.getElementById('wizard-mode'),
+    wizardMappingTbody: document.getElementById('wizard-mapping-tbody'),
+    wizardPreviewThead: document.getElementById('wizard-preview-thead'),
+    wizardPreviewTbody: document.getElementById('wizard-preview-tbody'),
+
+    // Uploader tab
     dropzone: document.getElementById('dropzone'),
     fileInput: document.getElementById('file-input'),
     selectedFileBadge: document.getElementById('selected-file-badge'),
     previewUploadBtn: document.getElementById('preview-upload-btn'),
     uploadPreviewCard: document.getElementById('upload-preview-card'),
+    previewSummaryBadge: document.getElementById('preview-summary-badge'),
     mappingBadges: document.getElementById('mapping-badges'),
     previewTableHeader: document.getElementById('preview-table-header'),
     previewTableBody: document.getElementById('preview-table-body'),
-    previewSummaryBadge: document.getElementById('preview-summary-badge'),
     cancelUploadBtn: document.getElementById('cancel-upload-btn'),
     commitUploadBtn: document.getElementById('commit-upload-btn'),
 
-    // Cache
+    // Cache sync
     rebuildSnapshotsBtn: document.getElementById('rebuild-snapshots-btn'),
     clearCacheBtn: document.getElementById('clear-cache-btn'),
-
-    // Modals
-    recordModal: document.getElementById('record-modal'),
-    recordModalTitle: document.getElementById('record-modal-title'),
-    recordForm: document.getElementById('record-form'),
-    modalFormFields: document.getElementById('modal-form-fields'),
-    modalCloseBtn: document.getElementById('modal-close-btn'),
-    modalCancelBtn: document.getElementById('modal-cancel-btn'),
-
-    deleteModal: document.getElementById('delete-modal'),
-    deleteModalCloseBtn: document.getElementById('delete-modal-close-btn'),
-    deleteCancelBtn: document.getElementById('delete-cancel-btn'),
-    deleteConfirmBtn: document.getElementById('delete-confirm-btn'),
-    deleteRecordDesc: document.getElementById('delete-record-desc'),
-
     toastContainer: document.getElementById('toast-container')
   };
 
-  // Initialize
-  init();
+  // Bootstrap
+  document.addEventListener('DOMContentLoaded', init);
 
   function init() {
-    applyTheme(state.theme);
-    bindEvents();
-    checkAuth();
+    initTheme();
+    setupEventListeners();
+    checkAuthSession();
+  }
+
+  // Theme Management
+  function initTheme() {
+    document.documentElement.setAttribute('data-theme', state.theme);
+    updateThemeIcon();
+  }
+
+  function toggleTheme() {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', state.theme);
+    localStorage.setItem('fd_theme', state.theme);
+    updateThemeIcon();
+  }
+
+  function updateThemeIcon() {
+    if (el.themeIcon) {
+      el.themeIcon.textContent = state.theme === 'dark' ? '☀️' : '🌙';
+    }
   }
 
   // Event Listeners
-  function bindEvents() {
-    // Theme Switcher
-    el.themeToggleBtn.addEventListener('click', () => {
-      const nextTheme = state.theme === 'light' ? 'dark' : 'light';
-      applyTheme(nextTheme);
-    });
+  function setupEventListeners() {
+    if (el.loginForm) el.loginForm.addEventListener('submit', handleLogin);
+    if (el.logoutBtn) el.logoutBtn.addEventListener('click', handleLogout);
+    if (el.themeToggleBtn) el.themeToggleBtn.addEventListener('click', toggleTheme);
 
-    // Sidebar Toggle
-    el.sidebarToggle.addEventListener('click', () => {
-      el.sidebar.classList.toggle('collapsed');
-    });
+    if (el.sidebarToggle && el.sidebar) {
+      el.sidebarToggle.addEventListener('click', () => {
+        el.sidebar.classList.toggle('collapsed');
+      });
+    }
 
-    // Navigation Tabs
+    // Navigation items
     el.navItems.forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
         const tab = item.dataset.tab;
         switchTab(tab);
       });
     });
 
-    // Quick action tiles
-    document.querySelectorAll('.action-tile').forEach(tile => {
-      tile.addEventListener('click', () => {
-        const jump = tile.dataset.jump;
-        const action = tile.dataset.action;
-        switchTab(jump);
-        if (action === 'add') {
-          setTimeout(openAddRecordModal, 150);
-        }
+    // Quick action buttons in dashboard
+    document.querySelectorAll('[data-action="switch-tab"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.target;
+        switchTab(tab);
       });
     });
 
-    // Login & Logout
-    el.loginForm.addEventListener('submit', handleLogin);
-    el.logoutBtn.addEventListener('click', handleLogout);
+    if (el.refreshStatsBtn) el.refreshStatsBtn.addEventListener('click', loadDashboardStats);
 
-    // Refresh Dashboard Stats
-    el.refreshStatsBtn.addEventListener('click', loadDashboardStats);
+    // Table Filters & Pagination
+    let searchDebounceTimer;
+    if (el.tableSearchInput) {
+      el.tableSearchInput.addEventListener('input', (e) => {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+          state.table.search = e.target.value.trim();
+          state.table.page = 1;
+          loadTableData();
+        }, 300);
+      });
+    }
 
-    // Table Filters & Search
-    let searchTimeout = null;
-    el.tableSearchInput.addEventListener('input', () => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => {
-        state.table.search = el.tableSearchInput.value.trim();
+    if (el.tableBeatFilter) {
+      el.tableBeatFilter.addEventListener('change', (e) => {
+        state.table.beat = e.target.value;
         state.table.page = 1;
         loadTableData();
-      }, 300);
-    });
+      });
+    }
 
-    el.tableBeatFilter.addEventListener('change', () => {
-      state.table.beat = el.tableBeatFilter.value;
-      state.table.page = 1;
-      loadTableData();
-    });
-
-    el.tableMouzaFilter.addEventListener('change', () => {
-      state.table.mouza = el.tableMouzaFilter.value;
-      state.table.page = 1;
-      loadTableData();
-    });
-
-    el.tablePageSizeFilter.addEventListener('change', () => {
-      state.table.pageSize = parseInt(el.tablePageSizeFilter.value, 10);
-      state.table.page = 1;
-      loadTableData();
-    });
-
-    el.pagePrevBtn.addEventListener('click', () => {
-      if (state.table.page > 1) {
-        state.table.page--;
+    if (el.tableMouzaFilter) {
+      el.tableMouzaFilter.addEventListener('change', (e) => {
+        state.table.mouza = e.target.value;
+        state.table.page = 1;
         loadTableData();
-      }
-    });
+      });
+    }
 
-    el.pageNextBtn.addEventListener('click', () => {
-      if (state.table.page < state.table.totalPages) {
-        state.table.page++;
+    if (el.tablePagesizeFilter) {
+      el.tablePagesizeFilter.addEventListener('change', (e) => {
+        state.table.pageSize = parseInt(e.target.value, 10);
+        state.table.page = 1;
         loadTableData();
-      }
-    });
+      });
+    }
 
-    el.tableAddBtn.addEventListener('click', openAddRecordModal);
+    if (el.pagePrevBtn) {
+      el.pagePrevBtn.addEventListener('click', () => {
+        if (state.table.page > 1) {
+          state.table.page--;
+          loadTableData();
+        }
+      });
+    }
 
-    // Record Modal Events
-    el.modalCloseBtn.addEventListener('click', closeRecordModal);
-    el.modalCancelBtn.addEventListener('click', closeRecordModal);
-    el.recordForm.addEventListener('submit', handleSaveRecord);
+    if (el.pageNextBtn) {
+      el.pageNextBtn.addEventListener('click', () => {
+        if (state.table.page < state.table.totalPages) {
+          state.table.page++;
+          loadTableData();
+        }
+      });
+    }
 
-    // Delete Modal Events
-    el.deleteModalCloseBtn.addEventListener('click', closeDeleteModal);
-    el.deleteCancelBtn.addEventListener('click', closeDeleteModal);
-    el.deleteConfirmBtn.addEventListener('click', handleConfirmDelete);
+    if (el.tableAddBtn) {
+      el.tableAddBtn.addEventListener('click', () => {
+        const meta = TABLE_META[state.activeTable];
+        if (meta && meta.isGis) {
+          // For fixed GIS layers, open file picker to upload GeoJSON
+          el.fileInput.click();
+        } else {
+          openAddRecordModal();
+        }
+      });
+    }
 
-    // Uploader Events
-    el.dropzone.addEventListener('click', () => el.fileInput.click());
-    el.fileInput.addEventListener('change', handleFileSelect);
+    // Record Modals
+    if (el.recordForm) el.recordForm.addEventListener('submit', handleSaveRecord);
+    if (el.modalCancelBtn) el.modalCancelBtn.addEventListener('click', closeRecordModal);
+    if (el.modalCloseBtn) el.modalCloseBtn.addEventListener('click', closeRecordModal);
 
-    el.dropzone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      el.dropzone.classList.add('drag-over');
-    });
+    // Delete Modals
+    if (el.deleteConfirmBtn) el.deleteConfirmBtn.addEventListener('click', handleConfirmDelete);
+    if (el.deleteCancelBtn) el.deleteCancelBtn.addEventListener('click', closeDeleteModal);
+    if (el.deleteModalCloseBtn) el.deleteModalCloseBtn.addEventListener('click', closeDeleteModal);
 
-    el.dropzone.addEventListener('dragleave', () => {
-      el.dropzone.classList.remove('drag-over');
-    });
+    // Dropzone & File Input
+    if (el.dropzone) {
+      el.dropzone.addEventListener('click', () => el.fileInput.click());
+      el.dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        el.dropzone.classList.add('dragover');
+      });
+      el.dropzone.addEventListener('dragleave', () => el.dropzone.classList.remove('dragover'));
+      el.dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        el.dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          triggerUploadWizard(e.dataTransfer.files[0]);
+        }
+      });
+    }
 
-    el.dropzone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      el.dropzone.classList.remove('drag-over');
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        processSelectedFile(e.dataTransfer.files[0]);
-      }
-    });
+    if (el.fileInput) {
+      el.fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          triggerUploadWizard(e.target.files[0]);
+        }
+      });
+    }
 
-    el.previewUploadBtn.addEventListener('click', handlePreviewUpload);
-    el.cancelUploadBtn.addEventListener('click', resetUploader);
-    el.commitUploadBtn.addEventListener('click', handleCommitUpload);
+    // Mapping Wizard Modal Events
+    if (el.wizardCloseBtn) el.wizardCloseBtn.addEventListener('click', closeWizardModal);
+    if (el.wizardCancelBtn) el.wizardCancelBtn.addEventListener('click', closeWizardModal);
+    if (el.wizardConfirmBtn) el.wizardConfirmBtn.addEventListener('click', handleWizardConfirm);
+    if (el.wizardTargetTable) el.wizardTargetTable.addEventListener('change', handleWizardTargetTableChange);
 
-    // Cache Events
-    el.rebuildSnapshotsBtn.addEventListener('click', handleRebuildSnapshots);
-    el.clearCacheBtn.addEventListener('click', handleClearCache);
-  }
-
-  // Theme Management
-  function applyTheme(theme) {
-    state.theme = theme;
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('fd_theme', theme);
-    el.themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
+    // Cache Actions
+    if (el.rebuildSnapshotsBtn) el.rebuildSnapshotsBtn.addEventListener('click', handleRebuildSnapshots);
+    if (el.clearCacheBtn) el.clearCacheBtn.addEventListener('click', handleClearCache);
   }
 
   // Toast Notifications
   function showToast(message, type = 'info') {
+    if (!el.toastContainer) return;
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <div class="toast-icon">${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</div>
-      <div class="toast-msg">${message}</div>
-    `;
+    const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+    toast.innerHTML = `<span><strong>${icon}</strong> ${message}</span>`;
     el.toastContainer.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
-      toast.style.transform = 'translateY(10px)';
-      toast.style.transition = 'all 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
+      setTimeout(() => toast.remove(), 250);
     }, 4000);
   }
 
-  // Navigation & Tabs
-  function switchTab(tabName) {
-    state.activeTab = tabName;
-
-    // Update active nav button
-    el.navItems.forEach(item => {
-      item.classList.toggle('active', item.dataset.tab === tabName);
-    });
-
-    // Handle generic table tabs vs standalone tabs
-    if (tabName in TABLE_META) {
-      state.activeTable = tabName;
-      el.tabPanes.forEach(pane => pane.classList.remove('active'));
-      document.getElementById('tab-table-view').classList.add('active');
-
-      const meta = TABLE_META[tabName];
-      el.tableViewTitle.textContent = meta.title;
-      el.tableViewSubtitle.textContent = meta.subtitle;
-
-      // Reset filters & page
-      state.table.page = 1;
-      state.table.search = '';
-      el.tableSearchInput.value = '';
-      loadTableData();
-    } else {
-      el.tabPanes.forEach(pane => {
-        pane.classList.toggle('active', pane.id === `tab-${tabName}`);
-      });
-
-      if (tabName === 'dashboard') {
-        loadDashboardStats();
-      }
-    }
-  }
-
-  // Authentication
-  async function checkAuth() {
+  // Auth Handling
+  async function checkAuthSession() {
     try {
       const res = await fetch('/api/admin/me');
       if (res.ok) {
-        const data = await res.json();
-        setAuthenticated(data.username);
+        const user = await res.json();
+        onAuthenticated(user);
       } else {
-        setUnauthenticated();
+        showLoginModal();
       }
     } catch (e) {
-      setUnauthenticated();
+      showLoginModal();
     }
   }
 
-  function setAuthenticated(username) {
-    state.user = username;
-    el.displayUsername.textContent = username;
-    el.loginOverlay.style.display = 'none';
-    el.adminShell.style.display = 'flex';
-
-    loadFilters();
-    loadDashboardStats();
+  function showLoginModal() {
+    if (el.loginOverlay) el.loginOverlay.style.display = 'flex';
+    if (el.adminShell) el.adminShell.style.display = 'none';
   }
 
-  function setUnauthenticated() {
-    state.user = null;
-    el.loginOverlay.style.display = 'flex';
-    el.adminShell.style.display = 'none';
+  function onAuthenticated(user) {
+    state.user = user;
+    if (el.displayUsername) el.displayUsername.textContent = user.username || 'Admin';
+    if (el.loginOverlay) el.loginOverlay.style.display = 'none';
+    if (el.adminShell) el.adminShell.style.display = 'flex';
+
+    loadDashboardStats();
+    loadFilterOptions();
   }
 
   async function handleLogin(e) {
     e.preventDefault();
-    el.loginError.style.display = 'none';
-    el.loginBtn.disabled = true;
-
     const username = el.loginUsername.value.trim();
-    const password = el.loginPassword.value.trim();
+    const password = el.loginPassword.value;
+
+    el.loginError.style.display = 'none';
+    const btnText = el.loginBtn.querySelector('.btn-text');
+    const btnSpinner = el.loginBtn.querySelector('.btn-spinner');
+    if (btnText) btnText.style.display = 'none';
+    if (btnSpinner) btnSpinner.style.display = 'inline-block';
+    el.loginBtn.disabled = true;
 
     try {
       const res = await fetch('/api/admin/login', {
@@ -405,19 +437,22 @@
         body: JSON.stringify({ username, password })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setAuthenticated(data.username);
-        showToast('Successfully authenticated as Administrator', 'success');
-      } else {
+      if (!res.ok) {
         const err = await res.json();
         el.loginError.textContent = err.detail || 'Invalid username or password';
         el.loginError.style.display = 'block';
+        return;
       }
-    } catch (e) {
-      el.loginError.textContent = 'Network or server error during sign-in';
+
+      const data = await res.json();
+      onAuthenticated({ username });
+      showToast('Welcome back, ' + username, 'success');
+    } catch (err) {
+      el.loginError.textContent = 'Server connection failed. Please check network.';
       el.loginError.style.display = 'block';
     } finally {
+      if (btnText) btnText.style.display = 'inline-block';
+      if (btnSpinner) btnSpinner.style.display = 'none';
       el.loginBtn.disabled = false;
     }
   }
@@ -426,8 +461,40 @@
     try {
       await fetch('/api/admin/logout', { method: 'POST' });
     } catch (e) {}
-    setUnauthenticated();
-    showToast('Signed out from Admin Portal', 'info');
+    state.user = null;
+    showToast('Signed out of admin session', 'info');
+    showLoginModal();
+  }
+
+  // Tab Switching
+  function switchTab(tabName) {
+    state.activeTab = tabName;
+
+    el.navItems.forEach(item => {
+      item.classList.toggle('active', item.dataset.tab === tabName);
+    });
+
+    el.tabPanes.forEach(pane => {
+      pane.classList.remove('active');
+    });
+
+    // Check if selecting a table
+    if (['parcel_info', 'encroachment_info', 'cs_plots', 'rs_plots'].includes(tabName)) {
+      state.activeTable = tabName;
+      const tableViewPane = document.getElementById('tab-table-view');
+      if (tableViewPane) tableViewPane.classList.add('active');
+
+      state.table.page = 1;
+      updateTableHeadersAndMeta();
+      loadTableData();
+    } else {
+      const targetPane = document.getElementById(`tab-${tabName}`);
+      if (targetPane) targetPane.classList.add('active');
+
+      if (tabName === 'dashboard') {
+        loadDashboardStats();
+      }
+    }
   }
 
   // Dashboard Stats
@@ -435,67 +502,79 @@
     try {
       const res = await fetch('/api/admin/stats');
       if (!res.ok) return;
-      const data = await res.json();
+      const stats = await res.json();
 
-      el.statParcels.textContent = (data.total_parcels || 0).toLocaleString();
-      el.statEncroachments.textContent = (data.total_encroachments || 0).toLocaleString();
-      el.statEncroachedAcre.textContent = (data.total_encroached_acre || 0).toLocaleString() + ' ac';
-      el.statPlots.textContent = (data.total_cs_plots || 0).toLocaleString();
+      if (el.statParcels) el.statParcels.textContent = (stats.total_parcels || 0).toLocaleString();
+      if (el.statEncroachments) el.statEncroachments.textContent = (stats.total_encroachments || 0).toLocaleString();
+      if (el.statEncroachedAcre) el.statEncroachedAcre.textContent = (stats.total_encroached_acre || 0).toFixed(2);
+      if (el.statPlots) el.statPlots.textContent = (stats.total_cs_plots || 0).toLocaleString();
+      if (el.statRsPlots) el.statRsPlots.textContent = (stats.total_rs_plots || 0).toLocaleString();
 
-      // Render Beat Distribution
-      const dist = data.beat_distribution || {};
-      const maxCount = Math.max(...Object.values(dist), 1);
-      
-      let html = '';
-      for (const [beat, count] of Object.entries(dist)) {
-        const pct = Math.round((count / maxCount) * 100);
-        html += `
-          <div class="beat-item">
-            <span class="beat-item-name" title="${beat}">${beat}</span>
-            <div class="beat-bar-wrapper">
-              <div class="beat-bar-fill" style="width: ${pct}%"></div>
+      if (el.beatDistributionList && stats.beat_distribution) {
+        let html = '';
+        for (const [beat, count] of Object.entries(stats.beat_distribution)) {
+          html += `
+            <div class="beat-stat-item">
+              <span class="beat-name">🌲 ${beat}</span>
+              <span class="beat-count mono">${count.toLocaleString()}</span>
             </div>
-            <span class="beat-item-count">${count.toLocaleString()}</span>
-          </div>
-        `;
+          `;
+        }
+        el.beatDistributionList.innerHTML = html;
       }
-      el.beatDistributionList.innerHTML = html || '<div class="placeholder-text">No beat statistics available</div>';
     } catch (e) {
-      console.error('Failed to load dashboard stats:', e);
+      console.warn('Stats fetch failed:', e);
     }
   }
 
-  // Load Filter Options
-  async function loadFilters() {
+  // Filter Options
+  async function loadFilterOptions() {
     try {
       const res = await fetch('/api/admin/filters');
       if (!res.ok) return;
-      const data = await res.json();
-      state.filterOptions = data;
+      const filters = await res.json();
+      state.filterOptions = filters;
 
-      // Populate Beat Select
-      el.tableBeatFilter.innerHTML = '<option value="">All Beats</option>';
-      data.beats.forEach(b => {
-        const opt = document.createElement('option');
-        opt.value = b;
-        opt.textContent = b;
-        el.tableBeatFilter.appendChild(opt);
-      });
+      if (el.tableBeatFilter) {
+        let beatHtml = '<option value="">All Beats</option>';
+        (filters.beats || []).forEach(b => {
+          beatHtml += `<option value="${b}">${b}</option>`;
+        });
+        el.tableBeatFilter.innerHTML = beatHtml;
+      }
 
-      // Populate Mouza Select
-      el.tableMouzaFilter.innerHTML = '<option value="">All Mouzas</option>';
-      data.mouzas.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        el.tableMouzaFilter.appendChild(opt);
-      });
+      if (el.tableMouzaFilter) {
+        let mouzaHtml = '<option value="">All Mouzas</option>';
+        (filters.mouzas || []).forEach(m => {
+          mouzaHtml += `<option value="${m}">${m}</option>`;
+        });
+        el.tableMouzaFilter.innerHTML = mouzaHtml;
+      }
     } catch (e) {
-      console.error('Failed to load filters:', e);
+      console.warn('Filter options fetch error:', e);
     }
   }
 
-  // Table Data Loading
+  // Table View & Data
+  function updateTableHeadersAndMeta() {
+    const table = state.activeTable;
+    const meta = TABLE_META[table];
+    if (!meta) return;
+
+    if (el.tableViewTitle) el.tableViewTitle.textContent = meta.title;
+    if (el.tableViewSubtitle) el.tableViewSubtitle.textContent = meta.subtitle;
+
+    if (meta.isGis) {
+      if (el.tableGisBadge) el.tableGisBadge.style.display = 'inline-block';
+      if (el.tableAddBtnText) el.tableAddBtnText.textContent = 'Upload GeoJSON Layer';
+      el.tableAddBtn.title = 'Upload GeoJSON / JSON file to add or update spatial features';
+    } else {
+      if (el.tableGisBadge) el.tableGisBadge.style.display = 'none';
+      if (el.tableAddBtnText) el.tableAddBtnText.textContent = 'Add Record';
+      el.tableAddBtn.title = 'Add new record to database table';
+    }
+  }
+
   async function loadTableData() {
     const table = state.activeTable;
     el.tableBody.innerHTML = '<tr><td colspan="10" class="text-center py-4">Loading table records...</td></tr>';
@@ -556,32 +635,40 @@
             val = '<span class="text-muted">-</span>';
           } else if (f.name === 'legal_status') {
             val = `<span class="badge badge-info">${val}</span>`;
-          } else if (f.name === 'encroached_area_acre' || f.name === 'area_fd') {
+          } else if (f.name === 'encroached_area_acre' || f.name === 'area_fd' || f.name === 'area_acre') {
             val = `<strong>${val}</strong> ac`;
           }
           bodyHtml += `<td>${val}</td>`;
         });
 
-        bodyHtml += `
-          <td class="text-right">
-            <div class="table-actions-cell" style="justify-content: flex-end;">
-              <button class="btn btn-outline btn-xs edit-row-btn" data-id="${row.id}">Edit</button>
-              <button class="btn btn-danger btn-xs delete-row-btn" data-id="${row.id}">Delete</button>
-            </div>
-          </td>
-        `;
+        if (meta.isGis) {
+          bodyHtml += `
+            <td class="text-right">
+              <span class="badge badge-purple" title="GIS spatial geometry is fixed. Update via GeoJSON upload.">Fixed Geometry</span>
+            </td>
+          `;
+        } else {
+          bodyHtml += `
+            <td class="text-right">
+              <div class="table-actions-cell" style="justify-content: flex-end;">
+                <button class="btn btn-outline btn-xs edit-row-btn" data-id="${row.id}">Edit</button>
+                <button class="btn btn-danger btn-xs delete-row-btn" data-id="${row.id}">Delete</button>
+              </div>
+            </td>
+          `;
+        }
         bodyHtml += `</tr>`;
       });
       el.tableBody.innerHTML = bodyHtml;
 
-      // Attach row action handlers
-      el.tableBody.querySelectorAll('.edit-row-btn').forEach(btn => {
-        btn.addEventListener('click', () => openEditRecordModal(btn.dataset.id));
-      });
-
-      el.tableBody.querySelectorAll('.delete-row-btn').forEach(btn => {
-        btn.addEventListener('click', () => openDeleteModal(btn.dataset.id));
-      });
+      if (!meta.isGis) {
+        el.tableBody.querySelectorAll('.edit-row-btn').forEach(btn => {
+          btn.addEventListener('click', () => openEditRecordModal(btn.dataset.id));
+        });
+        el.tableBody.querySelectorAll('.delete-row-btn').forEach(btn => {
+          btn.addEventListener('click', () => openDeleteModal(btn.dataset.id));
+        });
+      }
     }
 
     // Update Pagination UI
@@ -593,10 +680,14 @@
     el.pageNextBtn.disabled = state.table.page >= state.table.totalPages;
   }
 
-  // Record Modal (Add / Edit)
+  // Record Modal (Add / Edit for Tabular Data)
   function openAddRecordModal() {
-    state.editingRecordId = null;
     const meta = TABLE_META[state.activeTable];
+    if (meta && meta.isGis) {
+      showToast('GIS spatial layers are fixed. Please upload GeoJSON to add features.', 'info');
+      return;
+    }
+    state.editingRecordId = null;
     el.recordModalTitle.textContent = `Add New Record (${meta.title})`;
     renderModalFields({});
     el.recordModal.style.display = 'flex';
@@ -714,40 +805,18 @@
     }
   }
 
-  // File Upload & Ingestion
-  function handleFileSelect(e) {
-    if (e.target.files && e.target.files.length > 0) {
-      processSelectedFile(e.target.files[0]);
-    }
-  }
+  // ========================================================================
+  // DYNAMIC POST-UPLOAD MAPPING WIZARD CONTROLLER
+  // ========================================================================
+  async function triggerUploadWizard(file) {
+    if (!file) return;
+    state.wizard.file = file;
 
-  function processSelectedFile(file) {
-    state.upload.file = file;
-    el.selectedFileBadge.textContent = `📄 ${file.name} (${Math.round(file.size / 1024)} KB)`;
-    el.selectedFileBadge.style.display = 'inline-flex';
-    el.previewUploadBtn.disabled = false;
-  }
-
-  function resetUploader() {
-    state.upload.file = null;
-    state.upload.preview = null;
-    el.fileInput.value = '';
-    el.selectedFileBadge.style.display = 'none';
-    el.previewUploadBtn.disabled = true;
-    el.uploadPreviewCard.style.display = 'none';
-  }
-
-  async function handlePreviewUpload() {
-    if (!state.upload.file) return;
-
-    el.previewUploadBtn.disabled = true;
-    const targetTable = el.uploadTargetTable.value;
-    state.upload.targetTable = targetTable;
-    state.upload.mode = el.uploadMode.value;
+    // Show loading banner
+    showToast(`Analyzing schema for ${file.name}...`, 'info');
 
     const fd = new FormData();
-    fd.append('file', state.upload.file);
-    fd.append('target_table', targetTable);
+    fd.append('file', file);
 
     try {
       const res = await fetch('/api/admin/upload/preview', {
@@ -757,58 +826,172 @@
 
       if (!res.ok) {
         const err = await res.json();
-        showToast(err.detail || 'Preview failed', 'error');
-        el.previewUploadBtn.disabled = false;
+        showToast(err.detail || 'File schema preview failed', 'error');
         return;
       }
 
-      const previewData = await res.json();
-      state.upload.preview = previewData;
-      renderUploadPreview(previewData);
+      const preview = await res.json();
+      state.wizard.previewData = preview;
+      state.wizard.selectedTable = preview.selected_table || preview.recommended_table;
+      state.wizard.mode = 'append';
+      state.wizard.mapping = Object.assign({}, preview.suggested_mapping || preview.columns_mapped || {});
+
+      openWizardModal(preview);
     } catch (e) {
-      showToast('Network error during file preview analysis', 'error');
-    } finally {
-      el.previewUploadBtn.disabled = false;
+      showToast('Error analyzing file upload', 'error');
     }
   }
 
-  function renderUploadPreview(data) {
-    el.previewSummaryBadge.textContent = `${data.total_rows.toLocaleString()} rows detected`;
+  function openWizardModal(preview) {
+    el.wizardFilename.textContent = preview.filename;
+    el.wizardRowsCount.textContent = `${preview.total_rows.toLocaleString()} items detected`;
 
-    // Render Mapping Badges
-    let badgesHtml = '';
-    for (const [col, field] of Object.entries(data.columns_mapped)) {
-      badgesHtml += `<span class="map-badge map-badge-matched">✓ "${col}" &rarr; <strong>${field}</strong></span>`;
+    if (preview.file_type === 'gis') {
+      el.wizardFiletypeBadge.className = 'wizard-filetype-badge badge badge-purple';
+      el.wizardFiletypeBadge.textContent = 'GIS Spatial Layer (GeoJSON)';
+    } else {
+      el.wizardFiletypeBadge.className = 'wizard-filetype-badge badge badge-info';
+      el.wizardFiletypeBadge.textContent = 'Tabular Dataset (CSV / Excel)';
     }
-    data.unmapped_columns.forEach(col => {
-      badgesHtml += `<span class="map-badge map-badge-unmapped">⚠ "${col}" (unmapped)</span>`;
+
+    // Populate Target DB options
+    let targetOptionsHtml = '';
+    (preview.compatible_tables || []).forEach(t => {
+      const isSelected = t.value === state.wizard.selectedTable ? 'selected' : '';
+      targetOptionsHtml += `<option value="${t.value}" ${isSelected}>${t.label}</option>`;
     });
-    el.mappingBadges.innerHTML = badgesHtml;
+    el.wizardTargetTable.innerHTML = targetOptionsHtml;
 
-    // Render Sample Preview Rows
-    const previewRows = data.preview_rows || [];
-    if (previewRows.length > 0) {
-      const headers = Object.keys(previewRows[0]);
-      el.previewTableHeader.innerHTML = headers.map(h => `<th>${h}</th>`).join('');
-      
-      let rowsHtml = '';
-      previewRows.forEach(r => {
-        rowsHtml += `<tr>${headers.map(h => `<td>${r[h] !== null && r[h] !== undefined ? r[h] : '-'}</td>`).join('')}</tr>`;
-      });
-      el.previewTableBody.innerHTML = rowsHtml;
-    }
+    // Render Field Mapping Table
+    renderWizardMappingRows();
 
-    el.uploadPreviewCard.style.display = 'block';
+    // Render Preview Rows
+    renderWizardSamplePreview();
+
+    el.mappingWizardModal.style.display = 'flex';
   }
 
-  async function handleCommitUpload() {
-    if (!state.upload.file) return;
+  function closeWizardModal() {
+    el.mappingWizardModal.style.display = 'none';
+    state.wizard.file = null;
+    state.wizard.previewData = null;
+    if (el.fileInput) el.fileInput.value = '';
+  }
 
-    el.commitUploadBtn.disabled = true;
+  async function handleWizardTargetTableChange(e) {
+    const newTarget = e.target.value;
+    state.wizard.selectedTable = newTarget;
+
+    // Re-fetch preview with specific target table
     const fd = new FormData();
-    fd.append('file', state.upload.file);
-    fd.append('target_table', state.upload.targetTable);
-    fd.append('mode', state.upload.mode);
+    fd.append('file', state.wizard.file);
+    fd.append('target_table', newTarget);
+
+    try {
+      const res = await fetch('/api/admin/upload/preview', {
+        method: 'POST',
+        body: fd
+      });
+      if (res.ok) {
+        const preview = await res.json();
+        state.wizard.previewData = preview;
+        state.wizard.mapping = Object.assign({}, preview.suggested_mapping || preview.columns_mapped || {});
+        renderWizardMappingRows();
+        renderWizardSamplePreview();
+      }
+    } catch (err) {}
+  }
+
+  function renderWizardMappingRows() {
+    const preview = state.wizard.previewData;
+    if (!preview) return;
+
+    const targetFields = preview.available_target_fields || [];
+    const detectedCols = preview.detected_fields || preview.columns_detected || [];
+    const currentMapping = state.wizard.mapping;
+
+    let rowsHtml = '';
+    targetFields.forEach(f => {
+      if (f === 'id') return; // ID is automatically auto-incremented
+
+      const activeSource = currentMapping[f] || '';
+
+      let selectHtml = `<select class="form-select form-select-sm wizard-map-select" data-target="${f}">`;
+      selectHtml += `<option value="">-- Leave Empty (Unmapped) --</option>`;
+      detectedCols.forEach(col => {
+        const selectedAttr = (activeSource === col) ? 'selected' : '';
+        selectHtml += `<option value="${col}" ${selectedAttr}>${col}</option>`;
+      });
+      selectHtml += `</select>`;
+
+      const isMapped = Boolean(activeSource);
+      const statusIcon = isMapped ? '<span class="text-success font-bold">✓</span>' : '<span class="text-muted">○</span>';
+
+      rowsHtml += `
+        <tr>
+          <td><strong>${f}</strong></td>
+          <td style="text-align: center;">${statusIcon}</td>
+          <td>${selectHtml}</td>
+        </tr>
+      `;
+    });
+
+    el.wizardMappingTbody.innerHTML = rowsHtml;
+
+    // Listen for dropdown changes to update state.wizard.mapping
+    el.wizardMappingTbody.querySelectorAll('.wizard-map-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const targetField = sel.dataset.target;
+        const sourceCol = sel.value;
+        if (sourceCol) {
+          state.wizard.mapping[targetField] = sourceCol;
+        } else {
+          delete state.wizard.mapping[targetField];
+        }
+        renderWizardMappingRows();
+        renderWizardSamplePreview();
+      });
+    });
+  }
+
+  function renderWizardSamplePreview() {
+    const preview = state.wizard.previewData;
+    if (!preview || !preview.preview_rows || preview.preview_rows.length === 0) {
+      el.wizardPreviewThead.innerHTML = '';
+      el.wizardPreviewTbody.innerHTML = '<tr><td class="text-center py-3 text-muted">No preview rows available</td></tr>';
+      return;
+    }
+
+    const rows = preview.preview_rows;
+    const cols = Object.keys(rows[0]).filter(k => !k.startsWith('_'));
+
+    el.wizardPreviewThead.innerHTML = cols.map(c => `<th>${c}</th>`).join('');
+
+    let bHtml = '';
+    rows.forEach(r => {
+      bHtml += `<tr>${cols.map(c => `<td>${r[c] !== null && r[c] !== undefined ? r[c] : '-'}</td>`).join('')}</tr>`;
+    });
+    el.wizardPreviewTbody.innerHTML = bHtml;
+  }
+
+  async function handleWizardConfirm() {
+    if (!state.wizard.file) return;
+
+    const btnText = el.wizardConfirmBtn.querySelector('.btn-text');
+    const btnSpinner = el.wizardConfirmBtn.querySelector('.btn-spinner');
+    if (btnText) btnText.style.display = 'none';
+    if (btnSpinner) btnSpinner.style.display = 'inline-block';
+    el.wizardConfirmBtn.disabled = true;
+
+    const targetTable = el.wizardTargetTable.value;
+    const mode = el.wizardMode.value;
+    const mappingJson = JSON.stringify(state.wizard.mapping);
+
+    const fd = new FormData();
+    fd.append('file', state.wizard.file);
+    fd.append('target_table', targetTable);
+    fd.append('mode', mode);
+    fd.append('mapping_json', mappingJson);
 
     try {
       const res = await fetch('/api/admin/upload/commit', {
@@ -818,18 +1001,24 @@
 
       if (!res.ok) {
         const err = await res.json();
-        showToast(err.detail || 'Upload ingestion failed', 'error');
+        showToast(err.detail || 'Ingestion failed', 'error');
         return;
       }
 
       const result = await res.json();
-      showToast(`Ingestion complete! Inserted: ${result.inserted}, Updated: ${result.updated}`, 'success');
-      resetUploader();
+      showToast(`Ingestion complete! Added: ${result.inserted}, Updated: ${result.updated}`, 'success');
+
+      closeWizardModal();
       loadDashboardStats();
+
+      // Automatically switch to the ingested table view
+      switchTab(targetTable);
     } catch (e) {
       showToast('Network error during ingestion commit', 'error');
     } finally {
-      el.commitUploadBtn.disabled = false;
+      if (btnText) btnText.style.display = 'inline-block';
+      if (btnSpinner) btnSpinner.style.display = 'none';
+      el.wizardConfirmBtn.disabled = false;
     }
   }
 

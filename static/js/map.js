@@ -257,21 +257,23 @@ function _dossierCacheSet(plotId, data) {
 // Bulk Dossier Map — keyed by uid (string), populated from /api/dossier/bulk
 // Enables instant full-dossier render from memory, zero API calls per click.
 // ---------------------------------------------------------------------------
-let _bulkDossierMap = null; // null = not yet loaded; {} = loaded but empty
+let _bulkDossierMap = null; // null = not yet loaded; keyed by cs_uid
+let _bulkDossierRsMap = null; // null = not yet loaded; keyed by rs_uid
 
-const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier_v3';
+const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier_v4';
 const BULK_DOSSIER_TTL       = 86400 * 1000; // 24 hours
 
 async function _storeBulkInMemory(payload) {
-  if (!payload || !payload.by_uid) return;
-  _bulkDossierMap = payload.by_uid; // plain object — O(1) uid lookup
+  if (!payload) return;
+  if (payload.by_uid) _bulkDossierMap = payload.by_uid;
+  if (payload.by_rs_uid) _bulkDossierRsMap = payload.by_rs_uid;
 }
 
 async function _fetchAndCacheBulk() {
   try {
     const res  = await fetch('/api/dossier/bulk');
     const data = await res.json();
-    if (data && data.by_uid) {
+    if (data && (data.by_uid || data.by_rs_uid)) {
       await SpatialCache.set(BULK_DOSSIER_CACHE_KEY, { data, _ts: Date.now() });
       await _storeBulkInMemory(data);
     }
@@ -443,7 +445,9 @@ const MapEngine = {
 
     this.layers.allPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
     this.layers.forestPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
+    this.layers.rsPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
     this.layers.csPlots = this.layers.allPlots;
+    this.isRsPlotsVisible = true;
     this.layers.beatBoundaries = L.featureGroup([], { pane: 'beatPane' }).addTo(this.map);
     this.layers.beatLabels = L.featureGroup([], { pane: 'labelPane' }).addTo(this.map);
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
@@ -581,10 +585,11 @@ const MapEngine = {
     // Stage 0: Zoom directly to Park Beat extent by default on first loading
     this.resetToDefaultExtent();
 
-    // Stage 1: Load Beat Boundaries + Encroachments immediately (<100ms)
+    // Stage 1: Load Beat Boundaries + Encroachments + RS Plots immediately (<100ms)
     await Promise.all([
       this.loadBeatBoundaries(),
-      this.loadEncroachments()
+      this.loadEncroachments(),
+      this.loadRSPlots()
     ]);
 
     // Stage 2: Background hydrate bulk dossier for instant 0ms lookups
@@ -819,6 +824,11 @@ const MapEngine = {
       if (forestCandidate) return forestCandidate;
     }
 
+    if (this.isRsPlotsVisible && this.currentRSFeatures && this.currentRSFeatures.length) {
+      const rsCandidate = this.pointInFeatures(latlng, this.currentRSFeatures);
+      if (rsCandidate) return rsCandidate;
+    }
+
     if (this.isAllPlotsVisible) {
       const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
       return this.pointInFeatures(latlng, allFeatures);
@@ -968,6 +978,90 @@ const MapEngine = {
   toggleCSPlots(visible) {
     this.toggleAllPlots(visible);
     this.toggleForestPlots(visible);
+  },
+
+  async loadRSPlots() {
+    const CACHE_KEY = 'rs_plots_v2';
+    const CACHE_TTL = 86400 * 1000;
+
+    let cachedData = null;
+    try {
+      const cached = await SpatialCache.get(CACHE_KEY);
+      if (cached && cached.data && cached.data.features) {
+        cachedData = cached.data;
+        this.rawRSData = cachedData;
+        this.renderRSPlotsGeoJSON(this.rawRSData);
+        if (cached._ts && (Date.now() - cached._ts) < CACHE_TTL) return;
+      }
+    } catch (e) {}
+
+    try {
+      const res = await fetch('/api/plots/rs?limit=35000');
+      const rsData = await res.json();
+      if (rsData && rsData.features && rsData.features.length > 0) {
+        SpatialCache.set(CACHE_KEY, { data: rsData, _ts: Date.now() });
+        this.rawRSData = rsData;
+        this.renderRSPlotsGeoJSON(this.rawRSData);
+      }
+    } catch (e) {
+      console.warn("Failed to load RS plots:", e);
+    }
+  },
+
+  renderRSPlotsGeoJSON(geojsonData) {
+    if (!this.layers.rsPlots) return;
+    this.layers.rsPlots.clearLayers();
+    this.currentRSFeatures = (geojsonData && geojsonData.features) ? geojsonData.features : [];
+    if (!this.currentRSFeatures.length) return;
+
+    this.indexPlotBBoxes(this.currentRSFeatures);
+
+    const rsGeoLayer = L.geoJSON(geojsonData, {
+      renderer: this.canvasRenderer,
+      interactive: true,
+      style: () => ({
+        color: '#8b5cf6',
+        weight: 1.8,
+        opacity: 0.85,
+        fillColor: '#a855f7',
+        fillOpacity: 0.08,
+        dashArray: '3, 3',
+        interactive: true
+      }),
+      onEachFeature: (feature, layer) => {
+        layer.on('click', (e) => {
+          if (e) {
+            if (e.originalEvent) {
+              e.originalEvent._stopped = true;
+              if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+            }
+            if (L.DomEvent && L.DomEvent.stopPropagation) {
+              L.DomEvent.stopPropagation(e);
+            }
+          }
+          this._plotClicked = true;
+          setTimeout(() => { this._plotClicked = false; }, 60);
+          this.selectPlot('rs_plot', feature);
+        });
+      }
+    });
+
+    this.geoLayers.rsPlots = rsGeoLayer;
+    rsGeoLayer.addTo(this.layers.rsPlots);
+  },
+
+  toggleRsPlots(visible) {
+    this.isRsPlotsVisible = visible;
+    if (visible) {
+      if (!this.map.hasLayer(this.layers.rsPlots)) {
+        this.map.addLayer(this.layers.rsPlots);
+      }
+    } else {
+      if (this.map.hasLayer(this.layers.rsPlots)) {
+        this.map.removeLayer(this.layers.rsPlots);
+      }
+    }
+    this.updateActiveLayerCount();
   },
 
   async loadBeatBoundaries() {
@@ -1558,6 +1652,61 @@ const MapEngine = {
   selectPlot(type, feature) {
     if (!feature) return;
     const p = feature.properties || {};
+
+    if (type === 'rs_plot') {
+      this.highlightPlot(feature);
+      const rUid = String(p.rs_uid || p.uid || '');
+      const bounds = this.getFeatureBounds(feature);
+      const plotId = p.id;
+
+      const plotBase = {
+        id: p.id, uid: rUid, rs_uid: rUid, plot_no: p.plot_no,
+        mouza: p.mouza || 'N/A', jl_no: p.jl_no || 'N/A',
+        area_acre: p.area_acre, beat_name: p.beat_name,
+        type: 'RS Revisional Survey'
+      };
+
+      if (_bulkDossierRsMap) {
+        if (rUid && _bulkDossierRsMap[rUid]) {
+          const bulk = _bulkDossierRsMap[rUid];
+          Dossier.renderRSPlot({
+            plot: plotBase, bounds,
+            parcel_info: { rs_uid: rUid, ...bulk },
+            encroachment: bulk.encroachment || { has_encroachment: false, count: 0, total_encroached_acre: 0, records: [] }
+          });
+          return;
+        } else {
+          Dossier.renderRSPlot({
+            plot: plotBase, bounds,
+            parcel_info: {
+              has_record: false,
+              rs_uid: rUid,
+              rs_plot_no: p.plot_no,
+              mouza: p.mouza || 'N/A',
+              rs_jl: p.jl_no || 'N/A',
+              beat_name: p.beat_name || null,
+              range: null,
+              total_area: p.area_acre,
+              total_area_fd: null,
+              total_area_others: null,
+              linked_cs_plots: []
+            },
+            encroachment: { has_encroachment: false, count: 0, total_encroached_acre: 0, records: [] }
+          });
+          return;
+        }
+      }
+
+      Dossier.renderRSPlot({ plot: plotBase, bounds, loadingParcelInfo: true });
+      if (plotId) {
+        fetch(`/api/plots/rs/${plotId}`)
+          .then(r => r.json())
+          .then(data => { if (data && data.plot) Dossier.renderRSPlot(data); })
+          .catch(console.warn);
+      }
+      return;
+    }
+
     const targetUid = p.uid;
 
     // 1. Highlight all plot polygons with the same UID

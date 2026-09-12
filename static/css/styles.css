@@ -1166,6 +1166,11 @@ body {
   border-color: rgba(56, 189, 248, 0.25);
 }
 
+.layer-item.highlight-purple {
+  background: rgba(168, 85, 247, 0.08);
+  border-color: rgba(168, 85, 247, 0.25);
+}
+
 /* Beat Boundary Map Label Markers */
 .beat-map-marker-container {
   background: transparent !important;
@@ -1276,6 +1281,7 @@ input:checked + .slider:before {
 }
 
 .layer-title.title-forest { color: #6ee7b7; }
+.layer-title.title-rs { color: #c084fc; }
 .layer-title.title-beat { color: #7dd3fc; }
 .layer-title.title-encroach { color: #fca5a5; }
 
@@ -1295,6 +1301,7 @@ input:checked + .slider:before {
 }
 
 .dot.green { background-color: #10b981; }
+.dot.purple { background-color: #a855f7; }
 .dot.yellow { background-color: #f59e0b; }
 .dot.grey { background-color: #64748b; }
 .dot.slate { background-color: #64748b; }

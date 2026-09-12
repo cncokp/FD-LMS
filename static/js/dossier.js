@@ -271,31 +271,151 @@ const Dossier = {
   /**
    * Render RS Cadastral Plot Dossier
    */
-  renderPlot(data) {
-    const p = data.plot;
+  renderRSPlot(data) {
+    const p = data.plot || {};
+    const pi = data.parcel_info;
+    const enc = data.encroachment || {};
+
+    this.currentPlotId = p.id;
 
     if (this.badge) this.badge.style.display = 'none';
-    if (this.title) this.title.textContent = `Plot #${p.plot_no} ${p.mouza ? '• ' + p.mouza : ''}`;
 
-    const areaFormatted = p.area_acre != null 
-      ? Number(p.area_acre).toFixed(2) + ' Ac' 
-      : '0.00 Ac';
+    const displayPlotNo = (pi && pi.has_record && pi.rs_plot_no) ? pi.rs_plot_no : (p.plot_no || 'N/A');
+    const displayMouza = (pi && pi.has_record && pi.mouza) ? pi.mouza : (p.mouza || 'N/A');
+    const displayJl = (pi && pi.has_record && pi.rs_jl) ? pi.rs_jl : (p.jl_no || 'N/A');
 
-    const beatDisplay = p.beat_name 
-      ? `<i class="fa-solid fa-tree prop-icon"></i><span class="prop-highlight-beat">${p.beat_name}</span>`
-      : `<span class="prop-dim-italic"><i class="fa-solid fa-tree prop-icon"></i>Pending separate dataset</span>`;
+    if (this.title) {
+      this.title.textContent = `RS Plot #${displayPlotNo} ${displayMouza && displayMouza !== 'N/A' ? '• ' + displayMouza : ''}`;
+    }
+
+    let areaFormatted = '0.00 Ac';
+    let fdAreaFormatted = '0.00 Ac';
+    let othersAreaFormatted = '0.00 Ac';
+
+    if (pi && pi.has_record) {
+      const totalAreaVal = pi.total_area != null ? pi.total_area : p.area_acre;
+      areaFormatted = totalAreaVal != null ? Number(totalAreaVal).toFixed(2) + ' Ac' : '0.00 Ac';
+      if (pi.total_area_fd != null) {
+        fdAreaFormatted = Number(pi.total_area_fd).toFixed(2) + ' Ac';
+      }
+      if (pi.total_area_others != null) {
+        othersAreaFormatted = Number(pi.total_area_others).toFixed(2) + ' Ac';
+      }
+    } else if (data.loadingParcelInfo) {
+      areaFormatted = p.area_acre != null ? Number(p.area_acre).toFixed(2) + ' Ac' : '0.00 Ac';
+      fdAreaFormatted = `<span style="font-size: 11px; color: #64748b;"><i class="fa-solid fa-spinner fa-spin"></i></span>`;
+      othersAreaFormatted = `<span style="font-size: 11px; color: #64748b;"><i class="fa-solid fa-spinner fa-spin"></i></span>`;
+    } else {
+      areaFormatted = p.area_acre != null ? Number(p.area_acre).toFixed(2) + ' Ac' : '0.00 Ac';
+    }
+
+    const effectiveBeat = (pi && pi.has_record && pi.beat_name) ? pi.beat_name : (p.beat_name || (pi && pi.beat_name));
+    const effectiveRange = pi && pi.range;
+
+    const beatDisplay = effectiveBeat 
+      ? `<i class="fa-solid fa-tree prop-icon"></i><span class="prop-highlight-beat">${effectiveBeat}</span>`
+      : `<span class="prop-dim-italic"><i class="fa-solid fa-tree prop-icon"></i>Not in current survey register</span>`;
+
+    const rangeDisplay = effectiveRange
+      ? `<i class="fa-solid fa-mountain-sun prop-icon"></i><span class="prop-highlight-range">${effectiveRange}</span>`
+      : (data.loadingParcelInfo
+          ? `<span class="prop-dim"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</span>`
+          : `<span class="prop-dim-italic"><i class="fa-solid fa-mountain-sun prop-icon"></i>Not in current survey register</span>`);
+
+    // Linked CS Plots Table Section
+    let csDetailsHtml = '';
+    if (pi && pi.linked_cs_plots && pi.linked_cs_plots.length > 0) {
+      const csRows = pi.linked_cs_plots.map(r => {
+        const legal = r.legal_status || '';
+        const badgeClass = legal.includes('20') ? 'sec20' : (legal.includes('6') ? 'sec6' : 'general');
+        const fdStr = r.area_fd != null ? Number(r.area_fd).toFixed(2) : '-';
+        const othersStr = r.area_others != null ? Number(r.area_others).toFixed(2) : '-';
+        return `
+          <tr>
+            <td class="mono td-bold">${r.cs_plot_no || 'N/A'}</td>
+            <td class="mono td-khatian">${r.cs_jl || '-'}</td>
+            <td class="mono td-fd-area">${fdStr}</td>
+            <td class="mono td-muted" style="text-align: right;">${othersStr}</td>
+            <td style="text-align: right;"><span class="badge-stat ${badgeClass}">${legal || 'N/A'}</span></td>
+          </tr>
+        `;
+      }).join('');
+
+      csDetailsHtml = `
+        <!-- Linked CS Plots Details -->
+        <div class="dossier-card">
+          <div class="dossier-card-title">
+            <span>Linked CS Plots (Cadastral Survey)</span>
+            <span style="font-size: 10.5px; color: #64748b; font-weight: 400; text-transform: none;">${pi.linked_cs_plots.length} linked</span>
+          </div>
+          <div class="rs-table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>CS Plot</th>
+                  <th>CS JL</th>
+                  <th style="text-align: right;">FD Area</th>
+                  <th style="text-align: right;">Others</th>
+                  <th style="text-align: right;">Legal Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${csRows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // Encroachment Section
+    let encroachHtml = '';
+    if (enc && enc.has_encroachment && enc.records && enc.records.length > 0) {
+      const recRows = enc.records.map((r, idx) => `
+        <div class="encroach-record-item">
+          <div class="encroach-rec-top">
+            <span class="encroach-idx">#${idx + 1}</span>
+            <span class="encroach-name">${r.encroacher_name || 'Unidentified Encroacher'}</span>
+            <span class="encroach-area-pill">${Number(r.encroached_area_acre || 0).toFixed(2)} Ac</span>
+          </div>
+          <div class="encroach-rec-details">
+            <div class="encroach-detail-row">
+              <span class="enc-label">Structure:</span>
+              <span class="enc-val">${r.structure_type || 'N/A'}</span>
+            </div>
+            <div class="encroach-detail-row">
+              <span class="enc-label">Action Taken:</span>
+              <span class="enc-val">${r.action_taken || 'No action recorded'}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      encroachHtml = `
+        <div class="dossier-card card-alert">
+          <div class="dossier-card-title title-alert">
+            <span><i class="fa-solid fa-triangle-exclamation"></i> Encroachment Cases</span>
+            <span class="badge-alert-count">${enc.count} Cases &bull; ${enc.total_encroached_acre} Ac</span>
+          </div>
+          <div class="encroach-records-list">
+            ${recRows}
+          </div>
+        </div>
+      `;
+    }
 
     let html = `
-      <!-- Parcel Identification Card -->
+      <!-- RS Parcel Identification Card -->
       <div class="dossier-card">
         <div class="dossier-card-title">
-          <span>Parcel Identification</span>
+          <span>RS Parcel Identification</span>
+          <span style="font-size: 10px; color: #a855f7; font-weight: 700; text-transform: uppercase;">RS Cadastre</span>
         </div>
         <div class="dossier-grid">
           <div class="dossier-prop">
-            <span class="prop-label">Plot Number</span>
-            <span class="prop-val mono prop-bold">
-              ${p.plot_no || 'N/A'}
+            <span class="prop-label">RS Plot No</span>
+            <span class="prop-val mono prop-bold prop-highlight-pno">
+              ${displayPlotNo}
             </span>
           </div>
 
@@ -309,25 +429,49 @@ const Dossier = {
           <div class="dossier-prop">
             <span class="prop-label">Mouza</span>
             <span class="prop-val prop-bold">
-              ${p.mouza || 'N/A'}
+              ${displayMouza}
             </span>
           </div>
 
           <div class="dossier-prop">
-            <span class="prop-label">JL No</span>
+            <span class="prop-label">RS JL No</span>
             <span class="prop-val mono prop-muted">
-              ${p.jl_no || 'N/A'}
+              ${displayJl}
             </span>
           </div>
 
-          <div class="dossier-prop" style="grid-column: 1 / -1;">
+          <div class="dossier-prop">
+            <span class="prop-label">FD Land Area</span>
+            <span class="prop-val mono prop-fd">
+              ${fdAreaFormatted}
+            </span>
+          </div>
+
+          <div class="dossier-prop">
+            <span class="prop-label">Private / Others</span>
+            <span class="prop-val mono prop-muted">
+              ${othersAreaFormatted}
+            </span>
+          </div>
+
+          <div class="dossier-prop">
             <span class="prop-label">Beat Name</span>
             <span class="prop-val">
               ${beatDisplay}
             </span>
           </div>
+
+          <div class="dossier-prop">
+            <span class="prop-label">Range</span>
+            <span class="prop-val">
+              ${rangeDisplay}
+            </span>
+          </div>
         </div>
       </div>
+
+      ${csDetailsHtml}
+      ${encroachHtml}
 
       <!-- Quick Actions -->
       <div style="margin-top: 6px;">
@@ -339,5 +483,12 @@ const Dossier = {
 
     if (this.content) this.content.innerHTML = html;
     this.open();
+  },
+
+  renderPlot(data) {
+    if (data && data.plot && data.plot.type && data.plot.type.includes('RS')) {
+      return this.renderRSPlot(data);
+    }
+    return this.renderCSPlot(data);
   }
 };

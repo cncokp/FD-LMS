@@ -21,7 +21,9 @@ except ImportError:
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-ALLOWED_TABLES = {"parcel_info", "encroachment_info", "cs_plots"}
+ALLOWED_TABLES = {"parcel_info", "encroachment_info", "cs_plots", "rs_plots"}
+GIS_TABLES = {"cs_plots", "rs_plots"}
+TABULAR_TABLES = {"parcel_info", "encroachment_info"}
 
 TABLE_FIELDS = {
     "parcel_info": [
@@ -30,11 +32,15 @@ TABLE_FIELDS = {
         "khatian_no", "legal_status", "remarks"
     ],
     "encroachment_info": [
-        "id", "uid", "encroacher_name", "cs_plot_no", "rs_plot_no", "rs_khatian",
+        "id", "uid", "cs_uid", "rs_uid", "encroacher_name", "cs_plot_no", "rs_plot_no", "rs_khatian",
         "sec_20", "sec_6", "encroached_area_acre", "structure_type", "action_taken"
     ],
     "cs_plots": [
         "id", "uid", "plot_no", "mouza", "jl_no", "beat_name", "area_acre",
+        "label_lat", "label_lng", "label_radius"
+    ],
+    "rs_plots": [
+        "id", "uid", "rs_uid", "plot_no", "mouza", "jl_no", "beat_name", "area_acre",
         "label_lat", "label_lng", "label_radius"
     ]
 }
@@ -165,9 +171,35 @@ def _init_snapshot_records_if_needed():
     except Exception as e:
         print(f"[AdminDB] Error loading CS plots for snapshot records: {e}")
 
+    # Load rs_plots from rs_plots.geojson.gz
+    rs_plots: List[Dict[str, Any]] = []
+    try:
+        rs_bytes = db.get_rs_plots_json_bytes()
+        rs_data = json.loads(rs_bytes.decode("utf-8"))
+        features = rs_data.get("features", [])
+        for f in features:
+            props = f.get("properties", {})
+            r_uid = props.get("rs_uid") or props.get("uid") or ""
+            rs_plots.append({
+                "id": props.get("id") or f.get("id"),
+                "uid": r_uid,
+                "rs_uid": r_uid,
+                "plot_no": props.get("plot_no") or "",
+                "mouza": props.get("mouza") or "",
+                "jl_no": props.get("jl_no") or "",
+                "beat_name": props.get("beat_name") or "",
+                "area_acre": props.get("area_acre") or 0.0,
+                "label_lat": props.get("label_lat") or 0.0,
+                "label_lng": props.get("label_lng") or 0.0,
+                "label_radius": props.get("label_radius") or 0.0,
+            })
+    except Exception as e:
+        print(f"[AdminDB] Error loading RS plots for snapshot records: {e}")
+
     _snapshot_records["parcel_info"] = parcels
     _snapshot_records["encroachment_info"] = encroachments
     _snapshot_records["cs_plots"] = cs_plots
+    _snapshot_records["rs_plots"] = rs_plots
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +237,7 @@ def get_admin_stats() -> Dict[str, Any]:
     parcels = _snapshot_records.get("parcel_info", [])
     encroachments = _snapshot_records.get("encroachment_info", [])
     cs_plots = _snapshot_records.get("cs_plots", [])
+    rs_plots = _snapshot_records.get("rs_plots", [])
 
     total_enc_acre = sum(float(e.get("encroached_area_acre") or 0) for e in encroachments)
     beat_dist: Dict[str, int] = {}
@@ -217,6 +250,7 @@ def get_admin_stats() -> Dict[str, Any]:
         "total_encroachments": len(encroachments),
         "total_encroached_acre": round(total_enc_acre, 2),
         "total_cs_plots": len(cs_plots),
+        "total_rs_plots": len(rs_plots),
         "beat_distribution": beat_dist,
         "source": "Local System Cache (High Performance)"
     }
@@ -339,6 +373,8 @@ def get_record(table: str, record_id: int) -> Optional[Dict[str, Any]]:
 def create_record(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
     if table not in ALLOWED_TABLES:
         raise ValueError(f"Table '{table}' is not supported")
+    if table in GIS_TABLES:
+        raise ValueError(f"GIS layer '{table}' is fixed. Geometries and features must be added or updated via GeoJSON upload.")
 
     _init_snapshot_records_if_needed()
     records = _snapshot_records.get(table, [])
@@ -372,6 +408,8 @@ def create_record(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
 def update_record(table: str, record_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if table not in ALLOWED_TABLES:
         raise ValueError(f"Table '{table}' is not supported")
+    if table in GIS_TABLES:
+        raise ValueError(f"GIS layer '{table}' is fixed. Geometries and features must be updated via GeoJSON upload.")
 
     _init_snapshot_records_if_needed()
     records = _snapshot_records.get(table, [])
@@ -390,6 +428,8 @@ def update_record(table: str, record_id: int, data: Dict[str, Any]) -> Optional[
 def delete_record(table: str, record_id: int) -> bool:
     if table not in ALLOWED_TABLES:
         raise ValueError(f"Table '{table}' is not supported")
+    if table in GIS_TABLES:
+        raise ValueError(f"GIS layer '{table}' is fixed. Features cannot be deleted individually via table view.")
 
     _init_snapshot_records_if_needed()
     records = _snapshot_records.get(table, [])
