@@ -176,21 +176,35 @@
               <div class="control-group">
                 <div id="layerListContainer" style="display: flex; flex-direction: column; gap: 8px;">
                   
-                  <!-- 1. All Plot Boundaries (CS) -->
+                  <!-- 1. Plot Boundary (CS) -->
                   <div class="layer-item">
                     <label class="toggle-switch">
                       <input type="checkbox" id="toggleAllPlots" checked />
                       <span class="slider slate"></span>
                     </label>
                     <div class="layer-desc">
-                      <span class="layer-title title-all">All Cadastral Plots</span>
+                      <span class="layer-title title-all">Plot Boundary (CS)</span>
                       <span class="layer-legend-pill">
-                        <span class="dot slate"></span> 11,312 Parcels &bull; Base Grid
+                        <span class="dot slate"></span> 11,312 Parcels &bull; CS Cadastre
                       </span>
                     </div>
                   </div>
 
-                  <!-- 2. Forest Land Plots (FD) -->
+                  <!-- 2. Plot Boundary (RS) Layer -->
+                  <div class="layer-item highlight-purple">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="toggleRsPlots" />
+                      <span class="slider purple"></span>
+                    </label>
+                    <div class="layer-desc">
+                      <span class="layer-title title-rs">Plot Boundary (RS)</span>
+                      <span class="layer-legend-pill">
+                        <span class="dot purple"></span> Revisional Survey &bull; RS Cadastre
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 3. Forest Land Plots (FD) -->
                   <div class="layer-item highlight-green">
                     <label class="toggle-switch">
                       <input type="checkbox" id="toggleForestPlots" checked />
@@ -198,41 +212,27 @@
                     </label>
                     <div class="layer-desc">
                       <span class="layer-title title-forest">Forest Land</span>
-                      <span class="layer-legend-pill">
-                        <span class="dot green"></span> 1,408 Parcels &bull; 7 Beats
+                      <span class="layer-legend-pill" id="forestLegendPill">
+                        <span class="dot green"></span> 1,408 Parcels &bull; CS Survey
                       </span>
                     </div>
                   </div>
 
-                  <!-- 3. RS Plot Boundaries Layer -->
-                  <div class="layer-item highlight-purple">
-                    <label class="toggle-switch">
-                      <input type="checkbox" id="toggleRsPlots" checked />
-                      <span class="slider purple"></span>
-                    </label>
-                    <div class="layer-desc">
-                      <span class="layer-title title-rs">RS Plot Boundary</span>
-                      <span class="layer-legend-pill">
-                        <span class="dot purple"></span> Revisional Survey &bull; RS Cadastre
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- 3. Beat Boundaries Layer -->
+                  <!-- 4. Beat Boundary Layer -->
                   <div class="layer-item highlight-blue">
                     <label class="toggle-switch">
                       <input type="checkbox" id="toggleBeatBoundaries" checked />
                       <span class="slider blue"></span>
                     </label>
                     <div class="layer-desc">
-                      <span class="layer-title title-beat">Beat Boundaries</span>
+                      <span class="layer-title title-beat">Beat Boundary</span>
                       <span class="layer-legend-pill">
                         <span class="dot blue"></span> 7 Beats &bull; 24,718 Acres
                       </span>
                     </div>
                   </div>
 
-                  <!-- 4. Encroached Parcels Alert Layer -->
+                  <!-- 5. Encroached Parcels Alert Layer -->
                   <div class="layer-item highlight-red">
                     <label class="toggle-switch">
                       <input type="checkbox" id="toggleEncroachments" checked />
@@ -240,8 +240,8 @@
                     </label>
                     <div class="layer-desc">
                       <span class="layer-title title-encroach">Encroached Parcels</span>
-                      <span class="layer-legend-pill">
-                        <span class="dot red"></span> 59.83 Acres &bull; 224 Cases
+                      <span class="layer-legend-pill" id="encroachLegendPill">
+                        <span class="dot red"></span> 59.83 Acres &bull; 224 Cases (CS)
                       </span>
                     </div>
                   </div>

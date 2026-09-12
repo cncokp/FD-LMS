@@ -44,7 +44,7 @@
   // Table Configuration Metadata
   const TABLE_META = {
     cs_plots: {
-      title: 'CS Plot Boundaries',
+      title: 'Plot Boundary (CS)',
       subtitle: 'Cadastral Survey (CS) polygon boundaries and spatial attributes (Fixed GIS Layer)',
       isGis: true,
       fields: [
@@ -57,7 +57,7 @@
       ]
     },
     rs_plots: {
-      title: 'RS Plot Boundaries',
+      title: 'Plot Boundary (RS)',
       subtitle: 'Revisional Survey (RS) polygon boundaries and spatial attributes (Fixed GIS Layer)',
       isGis: true,
       fields: [

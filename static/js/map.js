@@ -267,6 +267,11 @@ async function _storeBulkInMemory(payload) {
   if (!payload) return;
   if (payload.by_uid) _bulkDossierMap = payload.by_uid;
   if (payload.by_rs_uid) _bulkDossierRsMap = payload.by_rs_uid;
+  if (typeof MapEngine !== 'undefined' && MapEngine.map) {
+    MapEngine.updateForestLandLayer();
+    MapEngine.updateEncroachedParcelsLayer();
+    MapEngine.updateLabels();
+  }
 }
 
 async function _fetchAndCacheBulk() {
@@ -443,11 +448,14 @@ const MapEngine = {
 
     this.initBasemaps();
 
+    this.activeSurveyMode = 'cs';
     this.layers.allPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
     this.layers.forestPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
-    this.layers.rsPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
+    this.layers.rsPlots = L.featureGroup([], { pane: 'csPane' });
     this.layers.csPlots = this.layers.allPlots;
-    this.isRsPlotsVisible = true;
+    this.isAllPlotsVisible = true;
+    this.isForestPlotsVisible = true;
+    this.isRsPlotsVisible = false;
     this.layers.beatBoundaries = L.featureGroup([], { pane: 'beatPane' }).addTo(this.map);
     this.layers.beatLabels = L.featureGroup([], { pane: 'labelPane' }).addTo(this.map);
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
@@ -482,15 +490,16 @@ const MapEngine = {
         return;
       }
 
-      // Check if clicked inside a CS / Forest plot
-      if (this.isAllPlotsVisible || this.isForestPlotsVisible) {
+      // Check if clicked inside a CS / RS / Forest plot
+      if (this.isAllPlotsVisible || this.isForestPlotsVisible || this.isRsPlotsVisible) {
         const clickedPlot = this.findPlotAtLatLng(e.latlng);
         if (clickedPlot) {
           this._plotClicked = true;
           setTimeout(() => {
             this._plotClicked = false;
           }, 60);
-          this.selectPlot('cs_plot', clickedPlot);
+          const type = (this.isRsPlotsVisible && !this.isAllPlotsVisible) ? 'rs_plot' : 'cs_plot';
+          this.selectPlot(type, clickedPlot);
           return;
         }
       }
@@ -519,15 +528,30 @@ const MapEngine = {
           let hoveredFeature = null;
           let isEncroach = false;
 
-          if (this.isEncroachmentsVisible && this.rawEncroachData && this.rawEncroachData.features) {
-            hoveredFeature = this.pointInFeatures(e.latlng, this.rawEncroachData.features);
-            if (hoveredFeature) {
-              isOverPlot = true;
-              isEncroach = true;
+          if (this.isEncroachmentsVisible) {
+            const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+            if (isRsMode) {
+              const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+              const cand = this.pointInFeatures(e.latlng, rsFeatures);
+              if (cand) {
+                const p = cand.properties || {};
+                const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
+                if (_bulkDossierRsMap && rUid && _bulkDossierRsMap[rUid]?.encroachment?.has_encroachment) {
+                  hoveredFeature = cand;
+                  isOverPlot = true;
+                  isEncroach = true;
+                }
+              }
+            } else if (this.rawEncroachData && this.rawEncroachData.features) {
+              hoveredFeature = this.pointInFeatures(e.latlng, this.rawEncroachData.features);
+              if (hoveredFeature) {
+                isOverPlot = true;
+                isEncroach = true;
+              }
             }
           }
 
-          if (!isOverPlot && (this.isAllPlotsVisible || this.isForestPlotsVisible)) {
+          if (!isOverPlot && (this.isAllPlotsVisible || this.isForestPlotsVisible || this.isRsPlotsVisible)) {
             hoveredFeature = this.findPlotAtLatLng(e.latlng);
             if (hoveredFeature) {
               isOverPlot = true;
@@ -816,17 +840,35 @@ const MapEngine = {
 
   findPlotAtLatLng(latlng) {
     if (!latlng) return null;
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+
+    if (isRsMode) {
+      const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+      if (!rsFeatures.length) return null;
+
+      // If forest plots is visible, prioritize RS forest plots
+      if (this.isForestPlotsVisible) {
+        const forestCandidates = rsFeatures.filter(f => {
+          const p = f.properties || {};
+          const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
+          return Boolean((_bulkDossierRsMap && rUid && _bulkDossierRsMap[rUid]) || (p.beat_name && p.beat_name.trim()));
+        });
+        const forestMatch = this.pointInFeatures(latlng, forestCandidates);
+        if (forestMatch) return forestMatch;
+      }
+
+      if (this.isRsPlotsVisible) {
+        return this.pointInFeatures(latlng, rsFeatures);
+      }
+      return null;
+    }
+
+    // CS Mode
     if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return null;
 
-    // If forest plots are visible, prioritize Forest Department plot
     if (this.isForestPlotsVisible && this.forestFeatures && this.forestFeatures.length) {
       const forestCandidate = this.pointInFeatures(latlng, this.forestFeatures);
       if (forestCandidate) return forestCandidate;
-    }
-
-    if (this.isRsPlotsVisible && this.currentRSFeatures && this.currentRSFeatures.length) {
-      const rsCandidate = this.pointInFeatures(latlng, this.currentRSFeatures);
-      if (rsCandidate) return rsCandidate;
     }
 
     if (this.isAllPlotsVisible) {
@@ -839,7 +881,6 @@ const MapEngine = {
 
   renderCSPlotsGeoJSON(geojsonData) {
     if (this.layers.allPlots) this.layers.allPlots.clearLayers();
-    if (this.layers.forestPlots) this.layers.forestPlots.clearLayers();
 
     this.currentCSFeatures = (geojsonData && geojsonData.features) ? geojsonData.features : [];
     this.forestFeatures = [];
@@ -866,9 +907,8 @@ const MapEngine = {
     }
 
     this.indexPlotBBoxes(this.currentCSFeatures);
-    this.updateLabels();
 
-    // 1. Tier 1: Base Cadastral Grid (All 11,312 plots, subtle slate outline)
+    // 1. Tier 1: Base Cadastral Grid (Plot Boundary CS)
     const allPlotsGeoLayer = L.geoJSON(geojsonData, {
       renderer: this.canvasRenderer,
       interactive: true,
@@ -904,58 +944,234 @@ const MapEngine = {
     this.geoLayers.cs = allPlotsGeoLayer;
     allPlotsGeoLayer.addTo(this.layers.allPlots);
 
-    // 2. Tier 2: Forest Department Land (1,408 parcels, rich emerald green)
-    const forestGeoData = {
-      type: 'FeatureCollection',
-      features: this.forestFeatures
-    };
-
-    const forestGeoLayer = L.geoJSON(forestGeoData, {
-      renderer: this.canvasRenderer,
-      interactive: true,
-      style: () => ({
-        color: '#059669',
-        weight: 1.8,
-        opacity: 0.95,
-        fillColor: '#10b981',
-        fillOpacity: 0.18,
-        interactive: true
-      }),
-      onEachFeature: (feature, layer) => {
-        layer.on('click', (e) => {
-          if (e) {
-            if (e.originalEvent) {
-              e.originalEvent._stopped = true;
-              if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
-            }
-            if (L.DomEvent && L.DomEvent.stopPropagation) {
-              L.DomEvent.stopPropagation(e);
-            }
-          }
-          this._plotClicked = true;
-          setTimeout(() => {
-            this._plotClicked = false;
-          }, 60);
-          this.selectPlot('cs_plot', feature);
-        });
-      }
-    });
-
-    this.geoLayers.forestPlots = forestGeoLayer;
-    forestGeoLayer.addTo(this.layers.forestPlots);
+    this.updateForestLandLayer();
+    this.updateEncroachedParcelsLayer();
+    this.updateLabels();
   },
 
-  toggleAllPlots(visible) {
+  updateForestLandLayer() {
+    if (!this.layers.forestPlots) return;
+    this.layers.forestPlots.clearLayers();
+
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+    const pill = document.getElementById('forestLegendPill');
+
+    if (isRsMode) {
+      const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+      const forestRsFeatures = [];
+
+      for (let i = 0; i < rsFeatures.length; i++) {
+        const feat = rsFeatures[i];
+        const p = feat.properties || {};
+        const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
+        const hasBulkMatch = Boolean(_bulkDossierRsMap && rUid && _bulkDossierRsMap[rUid]);
+        const hasBeat = Boolean(p.beat_name && p.beat_name.trim());
+        if (hasBulkMatch || hasBeat) {
+          forestRsFeatures.push(feat);
+        }
+      }
+
+      if (pill) {
+        const count = forestRsFeatures.length || (_bulkDossierRsMap ? Object.keys(_bulkDossierRsMap).length : 3391);
+        pill.innerHTML = `<span class="dot green"></span> ${count.toLocaleString()} Parcels &bull; RS Survey`;
+      }
+
+      if (forestRsFeatures.length > 0) {
+        const forestGeoLayer = L.geoJSON({ type: 'FeatureCollection', features: forestRsFeatures }, {
+          renderer: this.canvasRenderer,
+          interactive: true,
+          style: () => ({
+            color: '#059669',
+            weight: 2.0,
+            opacity: 0.95,
+            fillColor: '#10b981',
+            fillOpacity: 0.22,
+            interactive: true
+          }),
+          onEachFeature: (feature, layer) => {
+            layer.on('click', (e) => {
+              if (e) {
+                if (e.originalEvent) {
+                  e.originalEvent._stopped = true;
+                  if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+                }
+                if (L.DomEvent && L.DomEvent.stopPropagation) L.DomEvent.stopPropagation(e);
+              }
+              this._plotClicked = true;
+              setTimeout(() => { this._plotClicked = false; }, 60);
+              this.selectPlot('rs_plot', feature);
+            });
+          }
+        });
+        this.geoLayers.forestPlots = forestGeoLayer;
+        forestGeoLayer.addTo(this.layers.forestPlots);
+      }
+    } else {
+      // CS Survey Mode
+      const csFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+      const forestCsFeatures = [];
+
+      for (let i = 0; i < csFeatures.length; i++) {
+        const feat = csFeatures[i];
+        const p = feat.properties || {};
+        const uid = String(p.uid || '');
+        const hasBulkMatch = Boolean(_bulkDossierMap && uid && _bulkDossierMap[uid]);
+        const hasBeat = Boolean(p.beat_name && p.beat_name.trim());
+        if (hasBulkMatch || hasBeat) {
+          forestCsFeatures.push(feat);
+        }
+      }
+
+      const featuresToUse = forestCsFeatures.length ? forestCsFeatures : (this.forestFeatures || []);
+
+      if (pill) {
+        const count = featuresToUse.length || 1408;
+        pill.innerHTML = `<span class="dot green"></span> ${count.toLocaleString()} Parcels &bull; CS Survey`;
+      }
+
+      if (featuresToUse.length > 0) {
+        const forestGeoLayer = L.geoJSON({ type: 'FeatureCollection', features: featuresToUse }, {
+          renderer: this.canvasRenderer,
+          interactive: true,
+          style: () => ({
+            color: '#059669',
+            weight: 1.8,
+            opacity: 0.95,
+            fillColor: '#10b981',
+            fillOpacity: 0.18,
+            interactive: true
+          }),
+          onEachFeature: (feature, layer) => {
+            layer.on('click', (e) => {
+              if (e) {
+                if (e.originalEvent) {
+                  e.originalEvent._stopped = true;
+                  if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+                }
+                if (L.DomEvent && L.DomEvent.stopPropagation) L.DomEvent.stopPropagation(e);
+              }
+              this._plotClicked = true;
+              setTimeout(() => { this._plotClicked = false; }, 60);
+              this.selectPlot('cs_plot', feature);
+            });
+          }
+        });
+        this.geoLayers.forestPlots = forestGeoLayer;
+        forestGeoLayer.addTo(this.layers.forestPlots);
+      }
+    }
+  },
+
+  updateEncroachedParcelsLayer() {
+    if (!this.layers.encroachments) return;
+    this.layers.encroachments.clearLayers();
+
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+    const pill = document.getElementById('encroachLegendPill');
+
+    if (isRsMode) {
+      const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+      const encroachedRsFeatures = [];
+
+      const rsEncroachUidSet = new Set();
+      if (_bulkDossierRsMap) {
+        for (const [rUid, item] of Object.entries(_bulkDossierRsMap)) {
+          if (item && item.encroachment && item.encroachment.has_encroachment) {
+            rsEncroachUidSet.add(String(rUid));
+            if (item.uid2) rsEncroachUidSet.add(String(item.uid2));
+            if (item.rs_uid) rsEncroachUidSet.add(String(item.rs_uid));
+          }
+        }
+      }
+      if (this.rawEncroachData && this.rawEncroachData.features) {
+        for (let i = 0; i < this.rawEncroachData.features.length; i++) {
+          const ep = this.rawEncroachData.features[i].properties || {};
+          if (ep.rs_uid) rsEncroachUidSet.add(String(ep.rs_uid));
+          if (ep.uid2) rsEncroachUidSet.add(String(ep.uid2));
+        }
+      }
+
+      for (let i = 0; i < rsFeatures.length; i++) {
+        const feat = rsFeatures[i];
+        const p = feat.properties || {};
+        const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
+        if (rUid && rsEncroachUidSet.has(rUid)) {
+          encroachedRsFeatures.push(feat);
+        }
+      }
+
+      if (pill) {
+        const count = encroachedRsFeatures.length || rsEncroachUidSet.size || 41;
+        pill.innerHTML = `<span class="dot red"></span> ${count} Cases &bull; RS Survey`;
+      }
+
+      if (encroachedRsFeatures.length > 0) {
+        this.indexPlotBBoxes(encroachedRsFeatures);
+        const geoLayer = L.geoJSON({ type: 'FeatureCollection', features: encroachedRsFeatures }, {
+          pane: 'encroachPane',
+          renderer: this.encroachRenderer,
+          interactive: true,
+          style: () => ({
+            color: '#ef4444',
+            weight: 2.5,
+            opacity: 0.95,
+            fillColor: '#ef4444',
+            fillOpacity: 0.28,
+            dashArray: '5, 4'
+          }),
+          onEachFeature: (feature, layer) => {
+            layer.on('mouseover', () => { this.map.getContainer().style.cursor = 'pointer'; });
+            layer.on('mouseout', () => { this.map.getContainer().style.cursor = ''; });
+            layer.on('click', (e) => {
+              if (e) {
+                if (e.originalEvent) {
+                  e.originalEvent._stopped = true;
+                  if (e.originalEvent.stopPropagation) e.originalEvent.stopPropagation();
+                }
+                if (L.DomEvent && L.DomEvent.stopPropagation) L.DomEvent.stopPropagation(e);
+              }
+              this._plotClicked = true;
+              setTimeout(() => { this._plotClicked = false; }, 60);
+              this.selectPlot('rs_plot', feature);
+            });
+          }
+        });
+        this.geoLayers.encroachments = geoLayer;
+        geoLayer.addTo(this.layers.encroachments);
+      }
+    } else {
+      // CS Survey Mode
+      if (pill) {
+        pill.innerHTML = `<span class="dot red"></span> 59.83 Acres &bull; 224 Cases (CS)`;
+      }
+      if (this.rawEncroachData && this.rawEncroachData.features) {
+        this.renderEncroachmentsGeoJSON(this.rawEncroachData);
+      }
+    }
+  },
+
+  toggleAllPlots(visible, mutual = true) {
     this.isAllPlotsVisible = visible;
     if (visible) {
+      this.activeSurveyMode = 'cs';
       if (!this.map.hasLayer(this.layers.allPlots)) {
         this.map.addLayer(this.layers.allPlots);
+      }
+      if (mutual && this.isRsPlotsVisible) {
+        const rsToggle = document.getElementById('toggleRsPlots');
+        if (rsToggle) rsToggle.checked = false;
+        this.toggleRsPlots(false, false);
       }
     } else {
       if (this.map.hasLayer(this.layers.allPlots)) {
         this.map.removeLayer(this.layers.allPlots);
       }
+      if (this.isRsPlotsVisible) {
+        this.activeSurveyMode = 'rs';
+      }
     }
+    this.updateForestLandLayer();
+    this.updateEncroachedParcelsLayer();
     this.updateLabels();
     this.updateActiveLayerCount();
   },
@@ -1048,19 +1264,40 @@ const MapEngine = {
 
     this.geoLayers.rsPlots = rsGeoLayer;
     rsGeoLayer.addTo(this.layers.rsPlots);
+
+    if (this.isRsPlotsVisible && !this.isAllPlotsVisible) {
+      this.updateForestLandLayer();
+      this.updateEncroachedParcelsLayer();
+      this.updateLabels();
+    }
   },
 
-  toggleRsPlots(visible) {
+  async toggleRsPlots(visible, mutual = true) {
     this.isRsPlotsVisible = visible;
     if (visible) {
+      this.activeSurveyMode = 'rs';
+      if (!this.rawRSData || !this.rawRSData.features || !this.rawRSData.features.length) {
+        await this.loadRSPlots();
+      }
       if (!this.map.hasLayer(this.layers.rsPlots)) {
         this.map.addLayer(this.layers.rsPlots);
+      }
+      if (mutual && this.isAllPlotsVisible) {
+        const csToggle = document.getElementById('toggleAllPlots');
+        if (csToggle) csToggle.checked = false;
+        this.toggleAllPlots(false, false);
       }
     } else {
       if (this.map.hasLayer(this.layers.rsPlots)) {
         this.map.removeLayer(this.layers.rsPlots);
       }
+      if (this.isAllPlotsVisible) {
+        this.activeSurveyMode = 'cs';
+      }
     }
+    this.updateForestLandLayer();
+    this.updateEncroachedParcelsLayer();
+    this.updateLabels();
     this.updateActiveLayerCount();
   },
 
@@ -1301,21 +1538,33 @@ const MapEngine = {
             this._plotClicked = false;
           }, 60);
 
-          // Resolve corresponding CS parcel feature to highlight the exact plot boundary
-          let csFeature = null;
+          // Resolve corresponding parcel feature to highlight the exact plot boundary
+          let targetFeature = null;
           const p = feature.properties || {};
-          const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
-          if (p.uid) {
-            csFeature = allFeatures.find(f => f.properties && String(f.properties.uid) === String(p.uid));
+          const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+          if (isRsMode) {
+            const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+            const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
+            if (rUid) {
+              targetFeature = rsFeatures.find(f => {
+                const fp = f.properties || {};
+                return String(fp.rs_uid || fp.uid2 || fp.uid) === rUid;
+              });
+            }
+            this.selectPlot('rs_plot', targetFeature || feature);
+          } else {
+            const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+            if (p.uid) {
+              targetFeature = allFeatures.find(f => f.properties && String(f.properties.uid) === String(p.uid));
+            }
+            if (!targetFeature && p.id) {
+              targetFeature = allFeatures.find(f => f.id == p.id || (f.properties && f.properties.id == p.id));
+            }
+            if (!targetFeature && p.plot_no) {
+              targetFeature = allFeatures.find(f => f.properties && String(f.properties.plot_no) === String(p.plot_no));
+            }
+            this.selectPlot('cs_plot', targetFeature || feature);
           }
-          if (!csFeature && p.id) {
-            csFeature = allFeatures.find(f => f.id == p.id || (f.properties && f.properties.id == p.id));
-          }
-          if (!csFeature && p.plot_no) {
-            csFeature = allFeatures.find(f => f.properties && String(f.properties.plot_no) === String(p.plot_no));
-          }
-
-          this.selectPlot('cs_plot', csFeature || feature);
         });
       }
     });
@@ -1345,12 +1594,21 @@ const MapEngine = {
       this.toggleEncroachments(true);
     }
 
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+    if (isRsMode && this.layers.encroachments) {
+      const b = this.layers.encroachments.getBounds();
+      if (b && b.isValid && b.isValid()) {
+        this.map.fitBounds(b, { padding: [50, 50], maxZoom: 16 });
+        return;
+      }
+    }
+
     if (this.rawEncroachData && this.rawEncroachData.bounds) {
       const [minx, miny, maxx, maxy] = this.rawEncroachData.bounds;
       this.map.fitBounds([[miny, minx], [maxy, maxx]], { padding: [50, 50], maxZoom: 16 });
     } else if (this.layers.encroachments) {
       const b = this.layers.encroachments.getBounds();
-      if (b.isValid()) {
+      if (b && b.isValid && b.isValid()) {
         this.map.fitBounds(b, { padding: [50, 50], maxZoom: 16 });
       }
     }
@@ -1360,26 +1618,59 @@ const MapEngine = {
     if (!this.labelLayer) return;
     const labels = [];
 
-    const showAll = this.isAllPlotsVisible;
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+    const showAll = isRsMode ? this.isRsPlotsVisible : this.isAllPlotsVisible;
     const showForest = this.isForestPlotsVisible;
 
-    if ((showAll || showForest) && this.currentCSFeatures) {
-      for (let i = 0; i < this.currentCSFeatures.length; i++) {
-        const feat = this.currentCSFeatures[i];
-        const p = feat.properties;
-        if (!p || !p.plot_no || !p.label_lat || !p.label_lng) continue;
+    if (isRsMode) {
+      if ((showAll || showForest) && this.currentRSFeatures) {
+        for (let i = 0; i < this.currentRSFeatures.length; i++) {
+          const feat = this.currentRSFeatures[i];
+          const p = feat.properties;
+          if (!p || (!p.plot_no && !p.rs_plot_no)) continue;
 
-        const isForest = Boolean(p.beat_name && p.beat_name.trim());
-        // If only forest plots are visible, skip non-forest plot labels
-        if (!showAll && showForest && !isForest) {
-          continue;
+          let lat = p.label_lat;
+          let lng = p.label_lng;
+          if (!lat || !lng) {
+            if (feat._bbox) {
+              lat = (feat._bbox[1] + feat._bbox[3]) / 2;
+              lng = (feat._bbox[0] + feat._bbox[2]) / 2;
+            }
+          }
+          if (!lat || !lng) continue;
+
+          const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
+          const isForest = Boolean((_bulkDossierRsMap && rUid && _bulkDossierRsMap[rUid]) || (p.beat_name && p.beat_name.trim()));
+          if (!showAll && showForest && !isForest) {
+            continue;
+          }
+
+          labels.push({
+            latlng: [lat, lng],
+            radius: p.label_radius || 0,
+            text: String(p.plot_no || p.rs_plot_no)
+          });
         }
+      }
+    } else {
+      if ((showAll || showForest) && this.currentCSFeatures) {
+        for (let i = 0; i < this.currentCSFeatures.length; i++) {
+          const feat = this.currentCSFeatures[i];
+          const p = feat.properties;
+          if (!p || !p.plot_no || !p.label_lat || !p.label_lng) continue;
 
-        labels.push({ 
-          latlng: [p.label_lat, p.label_lng], 
-          radius: p.label_radius || 0,
-          text: String(p.plot_no)
-        });
+          const isForest = Boolean(p.beat_name && p.beat_name.trim());
+          // If only forest plots are visible, skip non-forest plot labels
+          if (!showAll && showForest && !isForest) {
+            continue;
+          }
+
+          labels.push({ 
+            latlng: [p.label_lat, p.label_lng], 
+            radius: p.label_radius || 0,
+            text: String(p.plot_no)
+          });
+        }
       }
     }
 
@@ -1391,7 +1682,9 @@ const MapEngine = {
     if (!badge) return;
     let count = 0;
     if (this.isAllPlotsVisible) count++;
+    if (this.isRsPlotsVisible) count++;
     if (this.isForestPlotsVisible) count++;
+    if (this.isBeatBoundariesVisible) count++;
     if (this.isEncroachmentsVisible) count++;
     badge.textContent = `${count} Active`;
   },
@@ -1436,7 +1729,7 @@ const MapEngine = {
         fillOpacity: 0.22
       };
     } else {
-      // Standard CS plot: slight sky-blue highlight
+      // Standard plot: slight sky-blue highlight
       style = {
         color: '#38bdf8',
         weight: 2.0,
@@ -1478,22 +1771,32 @@ const MapEngine = {
     }
 
     const p = feature.properties || {};
-    this._selectedUid = p.uid ? String(p.uid) : null;
+    const targetUid = p.uid || p.rs_uid || p.uid2;
+    this._selectedUid = targetUid ? String(targetUid) : null;
     this._selectedPlotId = p.id ? String(p.id) : null;
     this.clearHoverPlot();
 
     // Find and highlight all plots with the same UID
-    const targetUid = p.uid;
     let featuresToHighlight = [feature];
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
 
     if (targetUid) {
-      if (this.plotsByUid && this.plotsByUid.has(String(targetUid))) {
-        featuresToHighlight = this.plotsByUid.get(String(targetUid));
+      if (isRsMode) {
+        const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+        const matches = rsFeatures.filter(f => {
+          const fp = f.properties || {};
+          return String(fp.rs_uid || fp.uid2 || fp.uid) === String(targetUid);
+        });
+        if (matches.length > 0) featuresToHighlight = matches;
       } else {
-        const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
-        const matches = allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid));
-        if (matches.length > 0) {
-          featuresToHighlight = matches;
+        if (this.plotsByUid && this.plotsByUid.has(String(targetUid))) {
+          featuresToHighlight = this.plotsByUid.get(String(targetUid));
+        } else {
+          const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+          const matches = allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid));
+          if (matches.length > 0) {
+            featuresToHighlight = matches;
+          }
         }
       }
     }
@@ -1524,7 +1827,10 @@ const MapEngine = {
     if (!criteria) return { count: 0, matches: [] };
     const { beat, mouza, plotNo } = criteria;
 
-    const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+    const allFeatures = isRsMode
+      ? (this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [])
+      : (this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || []);
     if (!allFeatures.length) {
       return { count: 0, matches: [] };
     }
@@ -1655,7 +1961,7 @@ const MapEngine = {
 
     if (type === 'rs_plot') {
       this.highlightPlot(feature);
-      const rUid = String(p.rs_uid || p.uid || '');
+      const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
       const bounds = this.getFeatureBounds(feature);
       const plotId = p.id;
 
