@@ -211,6 +211,62 @@ def parse_file_data(file_bytes: bytes, filename: str) -> Tuple[List[str], List[D
             headers = sorted(list(all_keys))
             return headers, rows, "gis"
 
+        # Check if it's an ESRI / ArcGIS FeatureSet JSON (e.g. RS_Plot_BND.json)
+        is_esri = isinstance(parsed, dict) and "features" in parsed and (
+            parsed.get("geometryType") == "esriGeometryPolygon" or
+            parsed.get("spatialReference") or
+            (len(parsed.get("features", [])) > 0 and "attributes" in parsed["features"][0])
+        )
+        if is_esri:
+            import pyproj
+            wkid = parsed.get("spatialReference", {}).get("wkid") or 32646
+            trans = pyproj.Transformer.from_crs(f"EPSG:{wkid}", "EPSG:4326", always_xy=True)
+            features = parsed.get("features", [])
+            all_keys = set()
+            for ef in features:
+                attrs = dict(ef.get("attributes") or {})
+                geom = ef.get("geometry", {})
+                rings = geom.get("rings", [])
+                if not rings:
+                    continue
+
+                geo_coords = []
+                r_minx, r_miny, r_maxx, r_maxy = 180.0, 90.0, -180.0, -90.0
+                for ring in rings:
+                    r_coords = []
+                    for pt in ring:
+                        x, y = pt[0], pt[1]
+                        lng, lat = trans.transform(x, y)
+                        lng_r = round(lng, 6)
+                        lat_r = round(lat, 6)
+                        r_coords.append([lng_r, lat_r])
+                        if lng_r < r_minx: r_minx = lng_r
+                        if lat_r < r_miny: r_miny = lat_r
+                        if lng_r > r_maxx: r_maxx = lng_r
+                        if lat_r > r_maxy: r_maxy = lat_r
+                    geo_coords.append(r_coords)
+
+                props = attrs
+                props["_geometry"] = {
+                    "type": "Polygon" if len(geo_coords) == 1 else "MultiPolygon",
+                    "coordinates": geo_coords if len(geo_coords) == 1 else [geo_coords]
+                }
+                props["minx"] = r_minx
+                props["miny"] = r_miny
+                props["maxx"] = r_maxx
+                props["maxy"] = r_maxy
+                props["label_lng"] = round((r_minx + r_maxx) / 2.0, 6)
+                props["label_lat"] = round((r_miny + r_maxy) / 2.0, 6)
+                props["label_radius"] = round(max(r_maxx - r_minx, r_maxy - r_miny) / 2.0, 6)
+
+                for k in props.keys():
+                    if not k.startswith("_"):
+                        all_keys.add(k)
+                rows.append(props)
+
+            headers = sorted(list(all_keys))
+            return headers, rows, "gis"
+
         # If it's a list of dicts (tabular JSON)
         elif isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
             all_keys = set()
