@@ -983,6 +983,7 @@ def _build_bulk_payload(parcel_rows: List[Dict], encroach_rows: List[Dict]) -> b
         for er in erecs:
             enc_list.append({
                 "encroacher_name":      er.get("encroacher_name"),
+                "mouza":               er.get("mouza") or "",
                 "cs_plot_no":           er.get("cs_plot_no"),
                 "rs_plot_no":           er.get("rs_plot_no"),
                 "cs_uid":               uid,

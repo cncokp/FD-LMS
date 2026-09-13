@@ -329,6 +329,7 @@ def admin_list_table_records(
     search: str = Query("", max_length=100),
     beat: str = Query(""),
     mouza: str = Query(""),
+    plot: str = Query(""),
     sort_by: str = Query("id"),
     sort_dir: str = Query("desc"),
     current_user: dict = Depends(auth.get_current_admin)
@@ -341,6 +342,7 @@ def admin_list_table_records(
             search=search,
             beat=beat,
             mouza=mouza,
+            plot=plot,
             sort_by=sort_by,
             sort_dir=sort_dir
         )

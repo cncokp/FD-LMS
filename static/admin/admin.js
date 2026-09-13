@@ -19,6 +19,7 @@
       search: '',
       beat: '',
       mouza: '',
+      plot: '',
       sortBy: 'id',
       sortDir: 'desc',
       totalPages: 1,
@@ -97,6 +98,7 @@
       isGis: false,
       fields: [
         { name: 'encroacher_name', label: 'Encroacher Name & Address', type: 'text', required: true },
+        { name: 'mouza', label: 'Mouza', type: 'text', required: true },
         { name: 'cs_plot_no', label: 'CS Plot No', type: 'text', required: true },
         { name: 'rs_plot_no', label: 'RS Plot No', type: 'text' },
         { name: 'cs_uid', label: 'CS UID (UID)', type: 'text' },
@@ -146,7 +148,9 @@
     tableSearchInput: document.getElementById('table-search-input'),
     tableBeatFilter: document.getElementById('table-beat-filter'),
     tableMouzaFilter: document.getElementById('table-mouza-filter'),
+    tablePlotFilter: document.getElementById('table-plot-filter'),
     tablePagesizeFilter: document.getElementById('table-pagesize-filter'),
+    tableResetFiltersBtn: document.getElementById('table-reset-filters-btn'),
     tableHeaderRow: document.getElementById('table-header-row'),
     tableBody: document.getElementById('table-body'),
     paginationInfo: document.getElementById('pagination-info'),
@@ -312,6 +316,33 @@
       el.tableMouzaFilter.addEventListener('change', (e) => {
         state.table.mouza = e.target.value;
         state.table.page = 1;
+        loadTableData();
+      });
+    }
+
+    let plotDebounceTimer;
+    if (el.tablePlotFilter) {
+      el.tablePlotFilter.addEventListener('input', (e) => {
+        clearTimeout(plotDebounceTimer);
+        plotDebounceTimer = setTimeout(() => {
+          state.table.plot = e.target.value.trim();
+          state.table.page = 1;
+          loadTableData();
+        }, 300);
+      });
+    }
+
+    if (el.tableResetFiltersBtn) {
+      el.tableResetFiltersBtn.addEventListener('click', () => {
+        state.table.search = '';
+        state.table.beat = '';
+        state.table.mouza = '';
+        state.table.plot = '';
+        state.table.page = 1;
+        if (el.tableSearchInput) el.tableSearchInput.value = '';
+        if (el.tableBeatFilter) el.tableBeatFilter.value = '';
+        if (el.tableMouzaFilter) el.tableMouzaFilter.value = '';
+        if (el.tablePlotFilter) el.tablePlotFilter.value = '';
         loadTableData();
       });
     }
@@ -619,6 +650,16 @@
     }
   }
 
+  function escapeAttr(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   async function loadTableData() {
     const table = state.activeTable;
     el.tableBody.innerHTML = '<tr><td colspan="10" class="text-center py-4">Loading table records...</td></tr>';
@@ -629,6 +670,7 @@
       search: state.table.search,
       beat: state.table.beat,
       mouza: state.table.mouza,
+      plot: state.table.plot,
       sort_by: state.table.sortBy,
       sort_dir: state.table.sortDir
     });
@@ -657,11 +699,12 @@
     const meta = TABLE_META[table];
 
     // Build Table Headers
-    let headerHtml = '<th>ID</th>';
+    let headerHtml = '<th class="col-id">ID</th>';
     meta.fields.forEach(f => {
-      headerHtml += `<th>${f.label}</th>`;
+      const colClass = `col-${f.name.replace(/_/g, '-')}`;
+      headerHtml += `<th class="${colClass}">${f.label}</th>`;
     });
-    headerHtml += '<th class="text-right">Actions</th>';
+    headerHtml += '<th class="col-actions text-right">Actions</th>';
     el.tableHeaderRow.innerHTML = headerHtml;
 
     // Build Rows
@@ -671,7 +714,7 @@
       let bodyHtml = '';
       items.forEach(row => {
         bodyHtml += `<tr>`;
-        bodyHtml += `<td><strong>${row.id}</strong></td>`;
+        bodyHtml += `<td class="cell-id"><strong>${row.id}</strong></td>`;
 
         meta.fields.forEach(f => {
           let val = row[f.name];
@@ -680,14 +723,21 @@
             else if (f.name === 'rs_uid') val = row.uid2;
             else if (f.name === 'uid') val = row.cs_uid;
           }
+          const rawVal = val !== null && val !== undefined ? String(val) : '';
+          const colClass = `cell-${f.name.replace(/_/g, '-')}`;
+          let displayVal = val;
           if (val === null || val === undefined || val === '') {
-            val = '<span class="text-muted">-</span>';
+            displayVal = '<span class="text-muted">-</span>';
           } else if (f.name === 'legal_status') {
-            val = `<span class="badge badge-info">${val}</span>`;
+            displayVal = `<span class="badge badge-info">${val}</span>`;
           } else if (f.name === 'encroached_area_acre' || f.name === 'area_fd' || f.name === 'area_acre') {
-            val = `<strong>${val}</strong> ac`;
+            displayVal = `<span class="badge badge-acre"><strong>${val}</strong> ac</span>`;
+          } else if (f.name === 'cs_uid' || f.name === 'rs_uid' || f.name === 'uid') {
+            displayVal = `<span class="mono text-xs">${val}</span>`;
+          } else if (f.name === 'cs_plot_no' || f.name === 'rs_plot_no' || f.name === 'plot_no') {
+            displayVal = `<strong>${val}</strong>`;
           }
-          bodyHtml += `<td>${val}</td>`;
+          bodyHtml += `<td class="${colClass}" title="${escapeAttr(rawVal)}">${displayVal}</td>`;
         });
 
         if (meta.isGis) {

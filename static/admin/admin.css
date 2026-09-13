@@ -784,45 +784,81 @@ body {
 
 .toolbar-filters {
   display: flex;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .toolbar-filters select {
-  min-width: 140px;
+  min-width: 130px;
+}
+
+.filter-plot-wrapper {
+  position: relative;
+}
+
+.filter-plot-input {
+  width: 125px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.8125rem;
+  border-radius: var(--radius-md);
+}
+
+.reset-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.65rem;
+  color: var(--text-muted);
+}
+
+.reset-filter-btn:hover {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 /* Data Table */
 .table-card {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .table-responsive {
   width: 100%;
+  max-height: calc(100vh - 275px);
+  min-height: 380px;
+  overflow-y: auto;
   overflow-x: auto;
+  position: relative;
 }
 
 .admin-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   text-align: left;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
-.admin-table th {
+.admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   background-color: var(--bg-secondary);
   color: var(--text-secondary);
   font-weight: 600;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.6rem 0.75rem;
+  border-bottom: 2px solid var(--border);
+  box-shadow: 0 1px 0 var(--border);
   white-space: nowrap;
 }
 
 .admin-table td {
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-main);
-  max-width: 280px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -830,6 +866,36 @@ body {
 
 .admin-table tr:hover td {
   background-color: var(--bg-secondary);
+}
+
+/* Column specific compact width rules to ensure horizontal fit */
+.col-id, .cell-id { width: 50px; text-align: center; }
+.col-mouza, .cell-mouza { max-width: 120px; font-weight: 500; }
+.col-encroacher-name, .cell-encroacher-name { max-width: 180px; font-weight: 600; }
+.col-cs-plot-no, .cell-cs-plot-no,
+.col-rs-plot-no, .cell-rs-plot-no,
+.col-plot-no, .cell-plot-no { width: 75px; text-align: center; }
+.col-cs-uid, .cell-cs-uid,
+.col-rs-uid, .cell-rs-uid,
+.col-uid, .cell-uid { max-width: 95px; }
+.col-encroached-area-acre, .cell-encroached-area-acre,
+.col-area-fd, .cell-area-fd,
+.col-area-acre, .cell-area-acre { width: 95px; text-align: right; }
+.col-structure-type, .cell-structure-type { max-width: 130px; }
+.col-action-taken, .cell-action-taken { max-width: 140px; }
+.col-rs-khatian, .cell-rs-khatian,
+.col-sec-20, .cell-sec-20,
+.col-sec-6, .cell-sec-6 { max-width: 90px; }
+.col-actions, .admin-table td.text-right { width: 110px; white-space: nowrap; }
+
+.badge-acre {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .table-actions-cell {

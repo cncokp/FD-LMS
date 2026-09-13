@@ -32,7 +32,7 @@ TABLE_FIELDS = {
         "khatian_no", "legal_status", "remarks"
     ],
     "encroachment_info": [
-        "id", "uid", "cs_uid", "rs_uid", "encroacher_name", "cs_plot_no", "rs_plot_no", "rs_khatian",
+        "id", "uid", "cs_uid", "rs_uid", "encroacher_name", "mouza", "cs_plot_no", "rs_plot_no", "rs_khatian",
         "sec_20", "sec_6", "encroached_area_acre", "structure_type", "action_taken"
     ],
     "cs_plots": [
@@ -44,6 +44,45 @@ TABLE_FIELDS = {
         "label_lat", "label_lng", "label_radius"
     ]
 }
+
+# ---------------------------------------------------------------------------
+# Bengali / English Mouza Mapping & Normalization
+# ---------------------------------------------------------------------------
+BENGALI_MOUZA_MAP = {
+    "আড়াইশ প্রসাদ": "Araish Prashad",
+    "আড়াইশ": "Araish Prashad",
+    "araishprashad": "Araish Prashad",
+    "araish prashad": "Araish Prashad",
+    "বারুইপাড়া": "Baruipara",
+    "barui para": "Baruipara",
+    "baruipara": "Baruipara",
+    "bahadurpur": "Bahadurpur",
+    "বাহাদুরপুর": "Bahadurpur",
+    "b k bari": "BK Bari",
+    "bk bari": "BK Bari",
+    "bankhoira": "Bankhoira",
+    "বানখৈরা": "Bankhoira",
+    "baupara": "Baupara",
+    "বাউপাড়া": "Baupara",
+    "dogri": "Dogri",
+    "ডগ্রী": "Dogri",
+    "mahona bhabanipur": "Mahona Bhabanipur",
+    "মাহনা ভবানীপুর": "Mahona Bhabanipur",
+    "uttar salna": "Uttar Salna",
+    "উত্তর সালনা": "Uttar Salna",
+}
+
+def normalize_mouza(name: str) -> str:
+    if not name:
+        return ""
+    clean = str(name).strip().lower()
+    if clean in BENGALI_MOUZA_MAP:
+        return BENGALI_MOUZA_MAP[clean]
+    no_space = clean.replace(" ", "").replace("_", "").replace("-", "")
+    if no_space in BENGALI_MOUZA_MAP:
+        return BENGALI_MOUZA_MAP[no_space]
+    return str(name).strip()
+
 
 # ---------------------------------------------------------------------------
 # In-Memory / Snapshot Fallback Data Store (ensures 100% uptime even if offline)
@@ -104,6 +143,7 @@ def _init_snapshot_records_if_needed():
                 e["uid"] = u
                 e["rs_uid"] = r_uid
                 e["uid2"] = r_uid
+                e["mouza"] = e.get("mouza") or ""
                 encroachments.append(e)
 
             loaded_from_live = bool(parcels)
@@ -205,6 +245,7 @@ def _init_snapshot_records_if_needed():
                         "rs_uid": r_uid,
                         "uid2": r_uid,
                         "encroacher_name": er.get("encroacher_name") or "",
+                        "mouza": er.get("mouza") or val.get("mouza") or "",
                         "cs_plot_no": cp,
                         "rs_plot_no": rp,
                         "rs_khatian": er.get("rs_khatian") or "",
@@ -343,17 +384,16 @@ def get_filter_options() -> Dict[str, List[str]]:
     beats = set()
     mouzas = set()
 
-    for p in _snapshot_records.get("cs_plots", []):
-        b = p.get("beat_name")
-        m = p.get("mouza")
-        if b: beats.add(b.strip())
-        if m: mouzas.add(m.strip())
-
-    for p in _snapshot_records.get("parcel_info", []):
-        b = p.get("beat_name")
-        m = p.get("mouza")
-        if b: beats.add(b.strip())
-        if m: mouzas.add(m.strip())
+    for tbl in ["cs_plots", "rs_plots", "parcel_info", "encroachment_info"]:
+        for p in _snapshot_records.get(tbl, []):
+            b = p.get("beat_name")
+            m = p.get("mouza")
+            if b and str(b).strip():
+                beats.add(str(b).strip())
+            if m and str(m).strip():
+                m_norm = normalize_mouza(str(m).strip())
+                if m_norm:
+                    mouzas.add(m_norm)
 
     return {
         "beats": sorted(list(beats)),
@@ -465,6 +505,7 @@ def list_records(
     search: str = "",
     beat: str = "",
     mouza: str = "",
+    plot: str = "",
     sort_by: str = "id",
     sort_dir: str = "desc"
 ) -> Dict[str, Any]:
@@ -479,10 +520,33 @@ def list_records(
         beat_norm = beat.strip().lower()
         records = [r for r in records if (r.get("beat_name") or "").strip().lower() == beat_norm]
 
-    # Filter by mouza
+    # Filter by mouza (handles both canonical English and Bengali variants)
     if mouza:
-        mouza_norm = mouza.strip().lower()
-        records = [r for r in records if (r.get("mouza") or "").strip().lower() == mouza_norm]
+        target_norm = normalize_mouza(mouza).strip().lower()
+        records = [
+            r for r in records
+            if (
+                normalize_mouza(str(r.get("mouza") or "")).strip().lower() == target_norm
+                or mouza.strip().lower() == str(r.get("mouza") or "").strip().lower()
+                or (target_norm and target_norm in normalize_mouza(str(r.get("mouza") or "")).strip().lower())
+                or (mouza.strip().lower() in str(r.get("mouza") or "").strip().lower())
+            )
+        ]
+
+    # Filter by plot number (matches cs_plot_no, rs_plot_no, or plot_no)
+    if plot:
+        p_str = plot.strip().lower()
+        records = [
+            r for r in records
+            if (
+                p_str == str(r.get("plot_no") or "").strip().lower()
+                or p_str == str(r.get("cs_plot_no") or "").strip().lower()
+                or p_str == str(r.get("rs_plot_no") or "").strip().lower()
+                or (p_str in str(r.get("plot_no") or "").strip().lower())
+                or (p_str in str(r.get("cs_plot_no") or "").strip().lower())
+                or (p_str in str(r.get("rs_plot_no") or "").strip().lower())
+            )
+        ]
 
     # Search filter across multiple text columns
     if search:
