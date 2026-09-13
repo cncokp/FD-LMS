@@ -1281,7 +1281,8 @@ input:checked + .slider:before {
 }
 
 .layer-title.title-forest { color: #6ee7b7; }
-.layer-title.title-rs { color: #c084fc; }
+.layer-title.title-all,
+.layer-title.title-rs { color: #fff; }
 .layer-title.title-beat { color: #7dd3fc; }
 .layer-title.title-encroach { color: #fca5a5; }
 
@@ -2281,7 +2282,8 @@ input:checked + .slider:before {
 [data-theme="light"] .layer-title {
   color: #0f172a;
 }
-[data-theme="light"] .layer-title.title-all {
+[data-theme="light"] .layer-title.title-all,
+[data-theme="light"] .layer-title.title-rs {
   color: #0f172a !important;
   font-weight: 700;
 }

@@ -41,7 +41,7 @@
   </script>
 
   <!-- App Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260912_12" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260913_03" />
 
 </head>
 <body>
@@ -79,7 +79,7 @@
       <!-- Floating GIS HUD Progress Pill -->
       <div class="map-hud-pill hidden" id="mapLoadingIndicator">
         <div class="hud-pill-dot"></div>
-        <span class="hud-pill-text" id="loadingStatusText">Streaming Cadastral Parcels...</span>
+        <span class="hud-pill-text" id="loadingStatusText">Streaming RS Cadastral Parcels...</span>
       </div>
 
       <!-- Bottom-Left Map Controls: Basemap Switcher above Zoom Controls -->
@@ -168,30 +168,30 @@
               <div class="control-group">
                 <div id="layerListContainer" style="display: flex; flex-direction: column; gap: 8px;">
                   
-                  <!-- 1. Plot Boundary (CS) -->
+                  <!-- 1. Plot Boundary (RS) Layer -->
                   <div class="layer-item">
                     <label class="toggle-switch">
-                      <input type="checkbox" id="toggleAllPlots" checked />
+                      <input type="checkbox" id="toggleRsPlots" checked />
+                      <span class="slider slate"></span>
+                    </label>
+                    <div class="layer-desc">
+                      <span class="layer-title title-rs">Plot Boundary (RS)</span>
+                      <span class="layer-legend-pill">
+                        <span class="dot slate"></span> 19,463 Parcels &bull; RS Cadastre
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 2. Plot Boundary (CS) Layer -->
+                  <div class="layer-item">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="toggleAllPlots" />
                       <span class="slider slate"></span>
                     </label>
                     <div class="layer-desc">
                       <span class="layer-title title-all">Plot Boundary (CS)</span>
                       <span class="layer-legend-pill">
                         <span class="dot slate"></span> 11,312 Parcels &bull; CS Cadastre
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- 2. Plot Boundary (RS) Layer -->
-                  <div class="layer-item highlight-purple">
-                    <label class="toggle-switch">
-                      <input type="checkbox" id="toggleRsPlots" />
-                      <span class="slider purple"></span>
-                    </label>
-                    <div class="layer-desc">
-                      <span class="layer-title title-rs">Plot Boundary (RS)</span>
-                      <span class="layer-legend-pill">
-                        <span class="dot purple"></span> 19,463 Parcels &bull; RS Cadastre
                       </span>
                     </div>
                   </div>
@@ -205,7 +205,7 @@
                     <div class="layer-desc">
                       <span class="layer-title title-forest">Forest Land</span>
                       <span class="layer-legend-pill" id="forestLegendPill">
-                        <span class="dot green"></span> 1,408 Parcels &bull; CS Survey
+                        <span class="dot green"></span> 3,391 Parcels &bull; RS Survey
                       </span>
                     </div>
                   </div>
@@ -233,7 +233,7 @@
                     <div class="layer-desc">
                       <span class="layer-title title-encroach">Encroached Parcels</span>
                       <span class="layer-legend-pill" id="encroachLegendPill">
-                        <span class="dot red"></span> 59.83 Acres &bull; 224 Cases (CS)
+                        <span class="dot red"></span> 41 Cases &bull; RS Survey
                       </span>
                     </div>
                   </div>
@@ -355,8 +355,8 @@
   </script>
   <!-- Leaflet & App Scripts — defer keeps HTML parsing non-blocking; order is preserved -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-  <script src="/static/js/dossier.js?v=20260913_02" defer></script>
-  <script src="/static/js/map.js?v=20260913_02" defer></script>
-  <script src="/static/js/app.js?v=20260913_02" defer></script>
+  <script src="/static/js/dossier.js?v=20260913_03" defer></script>
+  <script src="/static/js/map.js?v=20260913_03" defer></script>
+  <script src="/static/js/app.js?v=20260913_03" defer></script>
 </body>
 </html>

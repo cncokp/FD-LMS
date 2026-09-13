@@ -342,11 +342,12 @@ const MapEngine = {
   _currentHoveredId: null,
   _selectedUid: null,
   _selectedPlotId: null,
-  isAllPlotsVisible: true,
+  isAllPlotsVisible: false,
   isForestPlotsVisible: true,
-  isCSPlotsVisible: true,
+  isCSPlotsVisible: false,
   isBeatBoundariesVisible: true,
   isEncroachmentsVisible: true,
+  isRsPlotsVisible: true,
   _plotClicked: false,
 
   defaultParkBounds: [
@@ -448,14 +449,14 @@ const MapEngine = {
 
     this.initBasemaps();
 
-    this.activeSurveyMode = 'cs';
-    this.layers.allPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
+    this.activeSurveyMode = 'rs';
+    this.layers.allPlots = L.featureGroup([], { pane: 'csPane' });
     this.layers.forestPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
-    this.layers.rsPlots = L.featureGroup([], { pane: 'csPane' });
+    this.layers.rsPlots = L.featureGroup([], { pane: 'csPane' }).addTo(this.map);
     this.layers.csPlots = this.layers.allPlots;
-    this.isAllPlotsVisible = true;
+    this.isAllPlotsVisible = false;
     this.isForestPlotsVisible = true;
-    this.isRsPlotsVisible = false;
+    this.isRsPlotsVisible = true;
     this.layers.beatBoundaries = L.featureGroup([], { pane: 'beatPane' }).addTo(this.map);
     this.layers.beatLabels = L.featureGroup([], { pane: 'labelPane' }).addTo(this.map);
     this.layers.encroachments = L.featureGroup([], { pane: 'encroachPane' }).addTo(this.map);
@@ -569,8 +570,8 @@ const MapEngine = {
       }
 
       // 2. Prefetch dossier if bulk data is not yet in memory
-      if (!this.isAllPlotsVisible && !this.isForestPlotsVisible) return;
-      if (_bulkDossierMap) return;
+      if (!this.isAllPlotsVisible && !this.isForestPlotsVisible && !this.isRsPlotsVisible) return;
+      if (_bulkDossierMap && _bulkDossierRsMap) return;
       if (_prefetchTimer) return;
       _prefetchTimer = setTimeout(() => {
         _prefetchTimer = null;
@@ -580,7 +581,9 @@ const MapEngine = {
         if (!plotId || plotId === _lastPrefetchId) return;
         if (_dossierCacheGet(plotId)) return;
         _lastPrefetchId = plotId;
-        fetch(`/api/plots/cs/${plotId}`)
+        const isRs = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+        const endpoint = isRs ? `/api/plots/rs/${plotId}` : `/api/plots/cs/${plotId}`;
+        fetch(endpoint)
           .then(r => r.json())
           .then(data => { if (data && data.plot) _dossierCacheSet(plotId, data); })
           .catch(() => {});
@@ -720,8 +723,8 @@ const MapEngine = {
       console.warn('Cache lookup skipped:', err);
     }
 
-    // Only show loading if we didn't have any cached data to display
-    if (!cachedData) {
+    // Only show loading if we didn't have any cached data to display AND CS plots are visible
+    if (this.isAllPlotsVisible && !cachedData) {
       this.showLoading('Streaming Cadastral Parcels...');
     }
 
@@ -736,17 +739,17 @@ const MapEngine = {
         // If cold visit (first time without cache):
         if (!cachedData) {
           this.renderCSPlotsGeoJSON(this.rawCSData);
-          this.hideLoading();
+          if (this.isAllPlotsVisible) this.hideLoading();
         } else {
           // Stale-while-revalidate background update:
           // Silently refresh layer without showing loading screen and WITHOUT resetting user's zoom/pan!
           this.renderCSPlotsGeoJSON(this.rawCSData);
         }
       } else {
-        this.hideLoading();
+        if (this.isAllPlotsVisible) this.hideLoading();
       }
     } catch (e) {
-      this.hideLoading();
+      if (this.isAllPlotsVisible) this.hideLoading();
       if (!cachedData) {
         console.error("Failed to load CS plots:", e);
       }
@@ -984,10 +987,10 @@ const MapEngine = {
           interactive: true,
           style: () => ({
             color: '#059669',
-            weight: 2.0,
+            weight: 1.8,
             opacity: 0.95,
             fillColor: '#10b981',
-            fillOpacity: 0.22,
+            fillOpacity: 0.18,
             interactive: true
           }),
           onEachFeature: (feature, layer) => {
@@ -1152,7 +1155,7 @@ const MapEngine = {
     }
   },
 
-  toggleAllPlots(visible, mutual = true) {
+  async toggleAllPlots(visible, mutual = true) {
     this.isAllPlotsVisible = visible;
     const csToggle = document.getElementById('toggleAllPlots');
     if (csToggle && csToggle.checked !== visible) {
@@ -1161,6 +1164,11 @@ const MapEngine = {
 
     if (visible) {
       this.activeSurveyMode = 'cs';
+      if (!this.rawCSData || !this.rawCSData.features || !this.rawCSData.features.length) {
+        this.showLoading('Streaming Cadastral Parcels...');
+        await this.loadCSPlots();
+        this.hideLoading();
+      }
       if (!this.map.hasLayer(this.layers.allPlots)) {
         this.map.addLayer(this.layers.allPlots);
       }
@@ -1260,12 +1268,11 @@ const MapEngine = {
       renderer: this.canvasRenderer,
       interactive: true,
       style: () => ({
-        color: '#e9d5ff',
-        weight: 1.0,
-        opacity: 0.65,
-        fillColor: '#f3e8ff',
+        color: '#64748b',
+        weight: 0.9,
+        opacity: 0.55,
+        fillColor: '#64748b',
         fillOpacity: 0.03,
-        dashArray: '3, 3',
         interactive: true
       }),
       onEachFeature: (feature, layer) => {
@@ -1785,10 +1792,22 @@ const MapEngine = {
     }
 
     // Support multi-part parcel highlighting (all parts of the same UID light up in unison)
-    const targetUid = p.uid;
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+    const targetUid = isRsMode ? (p.rs_uid || p.uid2 || p.uid) : p.uid;
     let featuresToHighlight = [feature];
-    if (targetUid && this.plotsByUid && this.plotsByUid.has(String(targetUid))) {
-      featuresToHighlight = this.plotsByUid.get(String(targetUid));
+    if (targetUid) {
+      if (isRsMode) {
+        const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+        const matches = rsFeatures.filter(f => {
+          const fp = f.properties || {};
+          return String(fp.rs_uid || fp.uid2 || fp.uid) === String(targetUid);
+        });
+        if (matches.length > 0) featuresToHighlight = matches;
+      } else {
+        if (this.plotsByUid && this.plotsByUid.has(String(targetUid))) {
+          featuresToHighlight = this.plotsByUid.get(String(targetUid));
+        }
+      }
     }
 
     L.geoJSON(featuresToHighlight, {
@@ -1927,7 +1946,8 @@ const MapEngine = {
 
     // 1 parcel matched: select plot directly and open Dossier
     if (matches.length === 1) {
-      this.selectPlot('cs_plot', matches[0]);
+      const type = isRsMode ? 'rs_plot' : 'cs_plot';
+      this.selectPlot(type, matches[0]);
       const bounds = this.getFeatureBounds(matches[0]);
       if (bounds && bounds.length === 4) {
         this.map.fitBounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]], { maxZoom: 18, padding: [60, 60] });
@@ -2010,10 +2030,25 @@ const MapEngine = {
       const bounds = this.getFeatureBounds(feature);
       const plotId = p.id;
 
+      const allRSFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+      const matchingFeatures = rUid
+        ? allRSFeatures.filter(f => {
+            const fp = f.properties || {};
+            return String(fp.rs_uid || fp.uid2 || fp.uid) === String(rUid);
+          })
+        : [feature];
+
+      let initialArea = 0;
+      if (matchingFeatures.length > 1) {
+        initialArea = matchingFeatures.reduce((acc, f) => acc + (Number(f.properties && f.properties.area_acre) || 0), 0);
+      } else {
+        initialArea = Number(p.area_acre) || 0;
+      }
+
       const plotBase = {
         id: p.id, uid: rUid, rs_uid: rUid, plot_no: p.plot_no,
         mouza: p.mouza || 'N/A', jl_no: p.jl_no || 'N/A',
-        area_acre: p.area_acre, beat_name: p.beat_name,
+        area_acre: initialArea, beat_name: p.beat_name,
         type: 'RS Revisional Survey'
       };
 
@@ -2158,16 +2193,32 @@ const MapEngine = {
    * Selects a plot by ID or search result, zooms into parcel level, and opens dossier
    */
   selectPlotById(type, id, fallbackLatLng = null, fallbackBounds = null) {
+    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
+    const resolvedType = type || (isRsMode ? 'rs_plot' : 'cs_plot');
+
     let feature = null;
-    if (this.rawCSData && this.rawCSData.features) {
-      feature = this.rawCSData.features.find(f => f.id == id || (f.properties && f.properties.id == id));
+    if (isRsMode || resolvedType === 'rs_plot') {
+      const rsFeatures = this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [];
+      feature = rsFeatures.find(f => f.id == id || (f.properties && (f.properties.id == id || f.properties.rs_uid == id || f.properties.uid == id)));
+    } else {
+      const csFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+      feature = csFeatures.find(f => f.id == id || (f.properties && (f.properties.id == id || f.properties.uid == id)));
     }
 
     if (feature) {
-      const targetUid = feature.properties && feature.properties.uid;
-      const allFeatures = this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || [];
+      const p = feature.properties || {};
+      const targetUid = isRsMode ? (p.rs_uid || p.uid2 || p.uid) : p.uid;
+      const allFeatures = isRsMode
+        ? (this.currentRSFeatures || (this.rawRSData && this.rawRSData.features) || [])
+        : (this.currentCSFeatures || (this.rawCSData && this.rawCSData.features) || []);
+
       const matchingFeatures = targetUid
-        ? allFeatures.filter(f => f.properties && String(f.properties.uid) === String(targetUid))
+        ? allFeatures.filter(f => {
+            const fp = f.properties || {};
+            return isRsMode
+              ? String(fp.rs_uid || fp.uid2 || fp.uid) === String(targetUid)
+              : String(fp.uid) === String(targetUid);
+          })
         : [feature];
 
       if (matchingFeatures.length > 1) {
@@ -2187,7 +2238,7 @@ const MapEngine = {
         }
       }
 
-      this.selectPlot(type, feature);
+      this.selectPlot(resolvedType, feature);
       return feature;
     } else if (fallbackLatLng) {
       if (fallbackBounds && fallbackBounds.length === 4) {
@@ -2197,11 +2248,16 @@ const MapEngine = {
       }
 
       // Fetch specific feature from API
-      fetch(`/api/plots/cs/${id}`)
+      const endpoint = (isRsMode || resolvedType === 'rs_plot') ? `/api/plots/rs/${id}` : `/api/plots/cs/${id}`;
+      fetch(endpoint)
         .then(r => r.json())
         .then(data => {
           if (data && data.plot && typeof Dossier !== 'undefined') {
-            Dossier.renderCSPlot(data);
+            if (isRsMode || resolvedType === 'rs_plot') {
+              Dossier.renderRSPlot(data);
+            } else {
+              Dossier.renderCSPlot(data);
+            }
           }
         })
         .catch(console.warn);

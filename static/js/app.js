@@ -284,7 +284,10 @@ function setupSpatialFilter() {
     const selectedBeat = beatSelect.value.trim();
     const selectedMouza = mouzaSelect.value.trim();
 
-    const features = MapEngine.currentCSFeatures || (MapEngine.rawCSData && MapEngine.rawCSData.features) || [];
+    const isRsMode = Boolean(MapEngine.isRsPlotsVisible && !MapEngine.isAllPlotsVisible);
+    const features = isRsMode
+      ? (MapEngine.currentRSFeatures || (MapEngine.rawRSData && MapEngine.rawRSData.features) || [])
+      : (MapEngine.currentCSFeatures || (MapEngine.rawCSData && MapEngine.rawCSData.features) || []);
     if (!features.length) return;
 
     const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -583,8 +586,9 @@ function setupSearchAutocomplete() {
 
             if (type === 'beat') {
               MapEngine.flyToBeat({ id, lat, lng, bounds });
-            } else if (id && type === 'cs_plot') {
-              MapEngine.selectPlotById('cs_plot', id, (lat && lng) ? [lat, lng] : null, bounds);
+            } else if (id && (type === 'cs_plot' || type === 'rs_plot' || type === 'plot')) {
+              const activeType = (MapEngine.isRsPlotsVisible && !MapEngine.isAllPlotsVisible) ? 'rs_plot' : (type || 'cs_plot');
+              MapEngine.selectPlotById(activeType, id, (lat && lng) ? [lat, lng] : null, bounds);
             } else if (lat && lng) {
               MapEngine.map.panTo([lat, lng], { animate: true });
             }

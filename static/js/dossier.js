@@ -286,7 +286,7 @@ const Dossier = {
     const displayJl = (pi && pi.has_record && pi.rs_jl) ? pi.rs_jl : (p.jl_no || 'N/A');
 
     if (this.title) {
-      this.title.textContent = `RS Plot #${displayPlotNo} ${displayMouza && displayMouza !== 'N/A' ? '• ' + displayMouza : ''}`;
+      this.title.textContent = `Plot #${displayPlotNo} ${displayMouza && displayMouza !== 'N/A' ? '• ' + displayMouza : ''}`;
     }
 
     let areaFormatted = '0.00 Ac';
@@ -334,7 +334,7 @@ const Dossier = {
         return `
           <tr>
             <td class="mono td-bold">${r.cs_plot_no || 'N/A'}</td>
-            <td class="mono td-khatian">${r.cs_jl || '-'}</td>
+            <td class="mono td-khatian">${r.khatian_no || r.cs_jl || '-'}</td>
             <td class="mono td-fd-area">${fdStr}</td>
             <td class="mono td-muted" style="text-align: right;">${othersStr}</td>
             <td style="text-align: right;"><span class="badge-stat ${badgeClass}">${legal || 'N/A'}</span></td>
@@ -354,7 +354,7 @@ const Dossier = {
               <thead>
                 <tr>
                   <th>CS Plot</th>
-                  <th>CS JL</th>
+                  <th>Khatian</th>
                   <th style="text-align: right;">FD Area</th>
                   <th style="text-align: right;">Others</th>
                   <th style="text-align: right;">Legal Status</th>
@@ -433,17 +433,16 @@ const Dossier = {
     }
 
     let html = `
-      <!-- RS Parcel Identification Card -->
+      <!-- Parcel Identification Card -->
       <div class="dossier-card">
         <div class="dossier-card-title">
-          <span>RS Parcel Identification</span>
-          <span style="font-size: 10px; color: #c084fc; font-weight: 700; text-transform: uppercase;">RS Cadastre</span>
+          <span>Parcel Identification</span>
         </div>
         ${encroachBanner}
         <div class="dossier-grid">
           <div class="dossier-prop">
-            <span class="prop-label">RS Plot No</span>
-            <span class="prop-val mono prop-bold prop-highlight-pno">
+            <span class="prop-label">Plot Number</span>
+            <span class="prop-val mono prop-bold">
               ${displayPlotNo}
             </span>
           </div>
@@ -456,6 +455,20 @@ const Dossier = {
           </div>
 
           <div class="dossier-prop">
+            <span class="prop-label">FD Owned Area</span>
+            <span class="prop-val mono prop-fd-area">
+              ${fdAreaFormatted}
+            </span>
+          </div>
+
+          <div class="dossier-prop">
+            <span class="prop-label">Other / Private Area</span>
+            <span class="prop-val mono prop-muted">
+              ${othersAreaFormatted}
+            </span>
+          </div>
+
+          <div class="dossier-prop">
             <span class="prop-label">Mouza</span>
             <span class="prop-val prop-bold">
               ${displayMouza}
@@ -463,23 +476,9 @@ const Dossier = {
           </div>
 
           <div class="dossier-prop">
-            <span class="prop-label">RS JL No</span>
+            <span class="prop-label">JL No</span>
             <span class="prop-val mono prop-muted">
               ${displayJl}
-            </span>
-          </div>
-
-          <div class="dossier-prop">
-            <span class="prop-label">FD Land Area</span>
-            <span class="prop-val mono prop-fd">
-              ${fdAreaFormatted}
-            </span>
-          </div>
-
-          <div class="dossier-prop">
-            <span class="prop-label">Private / Others</span>
-            <span class="prop-val mono prop-muted">
-              ${othersAreaFormatted}
             </span>
           </div>
 
@@ -491,7 +490,7 @@ const Dossier = {
           </div>
 
           <div class="dossier-prop">
-            <span class="prop-label">Range</span>
+            <span class="prop-label">Forest Range</span>
             <span class="prop-val">
               ${rangeDisplay}
             </span>
