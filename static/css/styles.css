@@ -1149,6 +1149,12 @@ body {
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.layer-item.highlight-slate {
+  background: rgba(100, 116, 139, 0.08);
+  border-color: rgba(100, 116, 139, 0.22);
 }
 
 .layer-item.highlight-red {
@@ -1169,6 +1175,26 @@ body {
 .layer-item.highlight-purple {
   background: rgba(168, 85, 247, 0.08);
   border-color: rgba(168, 85, 247, 0.25);
+}
+
+.layer-item.highlight-slate:hover {
+  border-color: rgba(100, 116, 139, 0.35);
+}
+
+.layer-item.highlight-red:hover {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.layer-item.highlight-green:hover {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.layer-item.highlight-blue:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.layer-item.highlight-purple:hover {
+  border-color: rgba(168, 85, 247, 0.4);
 }
 
 /* Beat Boundary Map Label Markers */
@@ -2279,12 +2305,34 @@ input:checked + .slider:before {
   color: #334155;
 }
 
+[data-theme="light"] .layer-item {
+  background: rgba(100, 116, 139, 0.06);
+  border: 1px solid rgba(100, 116, 139, 0.18);
+}
+
+[data-theme="light"] .layer-item.highlight-slate {
+  background: rgba(100, 116, 139, 0.08);
+  border-color: rgba(100, 116, 139, 0.22);
+}
+
+[data-theme="light"] .layer-item:hover {
+  border-color: rgba(100, 116, 139, 0.35);
+}
+
+[data-theme="light"] .slider {
+  background-color: #cbd5e1;
+}
+
+[data-theme="light"] .slider:before {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
 [data-theme="light"] .layer-title {
   color: #0f172a;
 }
 [data-theme="light"] .layer-title.title-all,
 [data-theme="light"] .layer-title.title-rs {
-  color: #0f172a !important;
+  color: #1e293b !important;
   font-weight: 700;
 }
 [data-theme="light"] .layer-title.title-forest {
