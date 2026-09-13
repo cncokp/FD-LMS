@@ -1510,10 +1510,21 @@ input:checked + .slider:before {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   padding: 12px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.card-encroach {
-  border-color: rgba(239, 68, 68, 0.2);
+.dossier-card.card-forest {
+  background: rgba(16, 185, 129, 0.05);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.dossier-card.card-cadastral {
+  background: rgba(100, 116, 139, 0.05);
+  border: 1px solid rgba(100, 116, 139, 0.18);
+}
+
+.dossier-card.card-encroach {
+  border: 1px solid rgba(239, 68, 68, 0.2);
   background: rgba(239, 68, 68, 0.04);
 }
 
@@ -2305,18 +2316,55 @@ input:checked + .slider:before {
   color: #334155;
 }
 
+/* Light Theme Layer Cards: Transparent fill matching exact layer content colors */
 [data-theme="light"] .layer-item {
-  background: rgba(100, 116, 139, 0.06);
-  border: 1px solid rgba(100, 116, 139, 0.18);
+  border-radius: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 [data-theme="light"] .layer-item.highlight-slate {
-  background: rgba(100, 116, 139, 0.08);
-  border-color: rgba(100, 116, 139, 0.22);
+  background: rgba(100, 116, 139, 0.08) !important;
+  border: 1px solid rgba(100, 116, 139, 0.22) !important;
 }
 
-[data-theme="light"] .layer-item:hover {
-  border-color: rgba(100, 116, 139, 0.35);
+[data-theme="light"] .layer-item.highlight-green {
+  background: rgba(16, 185, 129, 0.08) !important;
+  border: 1px solid rgba(16, 185, 129, 0.25) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-blue {
+  background: rgba(56, 189, 248, 0.08) !important;
+  border: 1px solid rgba(56, 189, 248, 0.25) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-red {
+  background: rgba(239, 68, 68, 0.08) !important;
+  border: 1px solid rgba(239, 68, 68, 0.25) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-purple {
+  background: rgba(168, 85, 247, 0.08) !important;
+  border: 1px solid rgba(168, 85, 247, 0.25) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-slate:hover {
+  border-color: rgba(100, 116, 139, 0.4) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-green:hover {
+  border-color: rgba(16, 185, 129, 0.45) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-blue:hover {
+  border-color: rgba(56, 189, 248, 0.45) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-red:hover {
+  border-color: rgba(239, 68, 68, 0.45) !important;
+}
+
+[data-theme="light"] .layer-item.highlight-purple:hover {
+  border-color: rgba(168, 85, 247, 0.45) !important;
 }
 
 [data-theme="light"] .slider {
@@ -2392,9 +2440,22 @@ input:checked + .slider:before {
 
 [data-theme="light"] .dossier-card {
   background: rgba(248, 250, 252, 0.95);
-  border-color: rgba(226, 232, 240, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
+[data-theme="light"] .dossier-card.card-forest {
+  background: rgba(16, 185, 129, 0.07) !important;
+  border: 1px solid rgba(16, 185, 129, 0.25) !important;
+}
+
+[data-theme="light"] .dossier-card.card-cadastral {
+  background: rgba(100, 116, 139, 0.06) !important;
+  border: 1px solid rgba(100, 116, 139, 0.2) !important;
+}
+
+[data-theme="light"] .dossier-card.card-encroach,
 [data-theme="light"] .card-encroach {
   background: #fef2f2 !important;
   border: 1px solid #fecaca !important;

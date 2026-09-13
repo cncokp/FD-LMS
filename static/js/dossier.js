@@ -77,6 +77,9 @@ const Dossier = {
           ? `<span class="prop-dim"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</span>`
           : `<span class="prop-dim-italic"><i class="fa-solid fa-mountain-sun prop-icon"></i>Not in current survey register</span>`);
 
+    const isForest = Boolean((effectiveBeat && effectiveBeat.trim()) || (pi && pi.has_record && pi.total_area_fd > 0));
+    const parcelCardClass = isForest ? 'card-forest' : 'card-cadastral';
+
     // RS Plots Details Table Section (with Legal Status as last column)
     let rsDetailsHtml = '';
     if (pi && pi.linked_rs_plots && pi.linked_rs_plots.length > 0) {
@@ -98,7 +101,7 @@ const Dossier = {
 
       rsDetailsHtml = `
         <!-- RS Plots Details -->
-        <div class="dossier-card">
+        <div class="dossier-card card-cadastral">
           <div class="dossier-card-title">
             <span>RS Plots Details</span>
             <span style="font-size: 10.5px; color: #64748b; font-weight: 400; text-transform: none;">${pi.linked_rs_plots.length} linked</span>
@@ -190,7 +193,7 @@ const Dossier = {
 
     let html = `
       <!-- Parcel Identification Card -->
-      <div class="dossier-card">
+      <div class="dossier-card ${parcelCardClass}">
         <div class="dossier-card-title">
           <span>Parcel Identification</span>
         </div>
@@ -323,6 +326,13 @@ const Dossier = {
           ? `<span class="prop-dim"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</span>`
           : `<span class="prop-dim-italic"><i class="fa-solid fa-mountain-sun prop-icon"></i>Not in current survey register</span>`);
 
+    const isForest = Boolean(
+      (rUid && typeof _bulkDossierRsMap !== 'undefined' && _bulkDossierRsMap[rUid]) ||
+      (effectiveBeat && effectiveBeat.trim()) ||
+      (pi && pi.has_record && pi.total_area_fd > 0)
+    );
+    const parcelCardClass = isForest ? 'card-forest' : 'card-cadastral';
+
     // Linked CS Plots Table Section
     let csDetailsHtml = '';
     if (pi && pi.linked_cs_plots && pi.linked_cs_plots.length > 0) {
@@ -344,7 +354,7 @@ const Dossier = {
 
       csDetailsHtml = `
         <!-- CS Plots Details -->
-        <div class="dossier-card">
+        <div class="dossier-card card-cadastral">
           <div class="dossier-card-title">
             <span>CS Plots Details</span>
             <span style="font-size: 10.5px; color: #64748b; font-weight: 400; text-transform: none;">${pi.linked_cs_plots.length} linked</span>
@@ -434,7 +444,7 @@ const Dossier = {
 
     let html = `
       <!-- Parcel Identification Card -->
-      <div class="dossier-card">
+      <div class="dossier-card ${parcelCardClass}">
         <div class="dossier-card-title">
           <span>Parcel Identification</span>
         </div>

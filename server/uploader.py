@@ -167,6 +167,44 @@ def _extract_geojson_bounds(geometry: Dict[str, Any]) -> Tuple[float, float, flo
     return minx, miny, maxx, maxy
 
 
+def _compute_label_placement(geometry: Dict[str, Any], bounds: Tuple[float, float, float, float]) -> Tuple[float, float, float]:
+    """
+    Computes polylabel (pole of inaccessibility) and inscribed clearance radius
+    for GeoJSON geometry dictionary. Falls back to bounding box center.
+    Returns (label_lng, label_lat, label_radius).
+    """
+    b_minx, b_miny, b_maxx, b_maxy = bounds
+    try:
+        from shapely.geometry import shape
+        from shapely.ops import polylabel
+        geom = shape(geometry)
+        if geom.geom_type == "Polygon":
+            pt = polylabel(geom, tolerance=1e-5)
+            rad = geom.exterior.distance(pt)
+        elif geom.geom_type == "MultiPolygon":
+            best_pt = None
+            best_rad = -1.0
+            for p in geom.geoms:
+                curr_pt = polylabel(p, tolerance=1e-5)
+                curr_rad = p.exterior.distance(curr_pt)
+                if curr_rad > best_rad:
+                    best_rad = curr_rad
+                    best_pt = curr_pt
+            pt = best_pt if best_pt is not None else geom.centroid
+            rad = best_rad if best_rad > 0 else 0.0001
+        else:
+            pt = geom.centroid
+            rad = 0.0001
+        if rad <= 0:
+            rad = 0.0001
+        return round(pt.x, 6), round(pt.y, 6), round(rad, 6)
+    except Exception:
+        fallback_lng = round((b_minx + b_maxx) / 2.0, 6)
+        fallback_lat = round((b_miny + b_maxy) / 2.0, 6)
+        fallback_rad = round(max(b_maxx - b_minx, b_maxy - b_miny) / 2.0, 6)
+        return fallback_lng, fallback_lat, fallback_rad
+
+
 def parse_file_data(file_bytes: bytes, filename: str) -> Tuple[List[str], List[Dict[str, Any]], str]:
     """
     Parses file bytes into (headers, rows, detected_type).
@@ -195,13 +233,14 @@ def parse_file_data(file_bytes: bytes, filename: str) -> Tuple[List[str], List[D
 
                 if geom:
                     b_minx, b_miny, b_maxx, b_maxy = _extract_geojson_bounds(geom)
+                    l_lng, l_lat, l_rad = _compute_label_placement(geom, (b_minx, b_miny, b_maxx, b_maxy))
                     props.setdefault("minx", round(b_minx, 6))
                     props.setdefault("miny", round(b_miny, 6))
                     props.setdefault("maxx", round(b_maxx, 6))
                     props.setdefault("maxy", round(b_maxy, 6))
-                    props.setdefault("label_lng", round((b_minx + b_maxx) / 2.0, 6))
-                    props.setdefault("label_lat", round((b_miny + b_maxy) / 2.0, 6))
-                    props.setdefault("label_radius", round(max(b_maxx - b_minx, b_maxy - b_miny) / 2.0, 6))
+                    props.setdefault("label_lng", l_lng)
+                    props.setdefault("label_lat", l_lat)
+                    props.setdefault("label_radius", l_rad)
 
                 for k in props.keys():
                     if not k.startswith("_"):
@@ -246,18 +285,20 @@ def parse_file_data(file_bytes: bytes, filename: str) -> Tuple[List[str], List[D
                         if lat_r > r_maxy: r_maxy = lat_r
                     geo_coords.append(r_coords)
 
-                props = attrs
-                props["_geometry"] = {
+                geo_geom = {
                     "type": "Polygon" if len(geo_coords) == 1 else "MultiPolygon",
                     "coordinates": geo_coords if len(geo_coords) == 1 else [geo_coords]
                 }
+                props = attrs
+                props["_geometry"] = geo_geom
+                l_lng, l_lat, l_rad = _compute_label_placement(geo_geom, (r_minx, r_miny, r_maxx, r_maxy))
                 props["minx"] = r_minx
                 props["miny"] = r_miny
                 props["maxx"] = r_maxx
                 props["maxy"] = r_maxy
-                props["label_lng"] = round((r_minx + r_maxx) / 2.0, 6)
-                props["label_lat"] = round((r_miny + r_maxy) / 2.0, 6)
-                props["label_radius"] = round(max(r_maxx - r_minx, r_maxy - r_miny) / 2.0, 6)
+                props["label_lng"] = l_lng
+                props["label_lat"] = l_lat
+                props["label_radius"] = l_rad
 
                 for k in props.keys():
                     if not k.startswith("_"):

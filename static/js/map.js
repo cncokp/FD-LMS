@@ -146,6 +146,8 @@ const PlotLabelLayer = L.Layer.extend({
     ctx.lineJoin = 'round';
     const pxPerDegreeLng = (256 * Math.pow(2, zoom)) / 360;
 
+    const drawnLabels = [];
+
     for (let i = 0; i < this._labels.length; i++) {
       const item = this._labels[i];
       const lat = item.latlng[0];
@@ -165,6 +167,18 @@ const PlotLabelLayer = L.Layer.extend({
             itemFontSize = Math.max(8.0, clearancePx * 0.95);
           }
         }
+
+        // De-duplicate identical plot labels placed close together in screen pixels (common in multi-part parcels)
+        let isDuplicate = false;
+        for (let j = 0; j < drawnLabels.length; j++) {
+          const d = drawnLabels[j];
+          if (d.text === item.text && Math.abs(d.x - x) < 24 && Math.abs(d.y - y) < 24) {
+            isDuplicate = true;
+            break;
+          }
+        }
+        if (isDuplicate) continue;
+        drawnLabels.push({ x, y, text: item.text });
 
         const roundedSize = Math.round(itemFontSize * 2) / 2;
         const fontStr = _labelFontCache[roundedSize] || (_labelFontCache[roundedSize] = `800 ${roundedSize}px "JetBrains Mono", "Plus Jakarta Sans", monospace`);
@@ -1220,7 +1234,7 @@ const MapEngine = {
   },
 
   async loadRSPlots() {
-    const CACHE_KEY = 'rs_plots_v4';
+    const CACHE_KEY = 'rs_plots_v5';
     const CACHE_TTL = 86400 * 1000;
 
     let cachedData = null;
@@ -1670,59 +1684,58 @@ const MapEngine = {
     if (!this.labelLayer) return;
     const labels = [];
 
-    const isRsMode = Boolean(this.isRsPlotsVisible && !this.isAllPlotsVisible);
-    const showAll = isRsMode ? this.isRsPlotsVisible : this.isAllPlotsVisible;
-    const showForest = this.isForestPlotsVisible;
+    const showRs = Boolean(this.isRsPlotsVisible);
+    const showCs = Boolean(this.isAllPlotsVisible);
+    const showForest = Boolean(this.isForestPlotsVisible);
 
-    if (isRsMode) {
-      if ((showAll || showForest) && this.currentRSFeatures) {
-        for (let i = 0; i < this.currentRSFeatures.length; i++) {
-          const feat = this.currentRSFeatures[i];
-          const p = feat.properties;
-          if (!p || (!p.plot_no && !p.rs_plot_no)) continue;
+    // 1. RS Cadastral Plot Labels
+    if ((showRs || (showForest && this.activeSurveyMode === 'rs')) && this.currentRSFeatures) {
+      for (let i = 0; i < this.currentRSFeatures.length; i++) {
+        const feat = this.currentRSFeatures[i];
+        const p = feat.properties;
+        if (!p || (!p.plot_no && !p.rs_plot_no)) continue;
 
-          let lat = p.label_lat;
-          let lng = p.label_lng;
-          if (!lat || !lng) {
-            if (feat._bbox) {
-              lat = (feat._bbox[1] + feat._bbox[3]) / 2;
-              lng = (feat._bbox[0] + feat._bbox[2]) / 2;
-            }
+        let lat = p.label_lat;
+        let lng = p.label_lng;
+        if (!lat || !lng) {
+          if (feat._bbox) {
+            lat = (feat._bbox[1] + feat._bbox[3]) / 2;
+            lng = (feat._bbox[0] + feat._bbox[2]) / 2;
           }
-          if (!lat || !lng) continue;
-
-          const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
-          const isForest = Boolean((_bulkDossierRsMap && rUid && _bulkDossierRsMap[rUid]) || (p.beat_name && p.beat_name.trim()));
-          if (!showAll && showForest && !isForest) {
-            continue;
-          }
-
-          labels.push({
-            latlng: [lat, lng],
-            radius: p.label_radius || 0,
-            text: String(p.plot_no || p.rs_plot_no)
-          });
         }
+        if (!lat || !lng) continue;
+
+        const rUid = String(p.rs_uid || p.uid2 || p.uid || '');
+        const isForest = Boolean((_bulkDossierRsMap && rUid && _bulkDossierRsMap[rUid]) || (p.beat_name && p.beat_name.trim()));
+        if (!showRs && showForest && !isForest) {
+          continue;
+        }
+
+        labels.push({
+          latlng: [lat, lng],
+          radius: p.label_radius || 0,
+          text: String(p.plot_no || p.rs_plot_no)
+        });
       }
-    } else {
-      if ((showAll || showForest) && this.currentCSFeatures) {
-        for (let i = 0; i < this.currentCSFeatures.length; i++) {
-          const feat = this.currentCSFeatures[i];
-          const p = feat.properties;
-          if (!p || !p.plot_no || !p.label_lat || !p.label_lng) continue;
+    }
 
-          const isForest = Boolean(p.beat_name && p.beat_name.trim());
-          // If only forest plots are visible, skip non-forest plot labels
-          if (!showAll && showForest && !isForest) {
-            continue;
-          }
+    // 2. CS Cadastral Plot Labels
+    if ((showCs || (showForest && this.activeSurveyMode === 'cs')) && this.currentCSFeatures) {
+      for (let i = 0; i < this.currentCSFeatures.length; i++) {
+        const feat = this.currentCSFeatures[i];
+        const p = feat.properties;
+        if (!p || !p.plot_no || !p.label_lat || !p.label_lng) continue;
 
-          labels.push({ 
-            latlng: [p.label_lat, p.label_lng], 
-            radius: p.label_radius || 0,
-            text: String(p.plot_no)
-          });
+        const isForest = Boolean(p.beat_name && p.beat_name.trim());
+        if (!showCs && showForest && !isForest) {
+          continue;
         }
+
+        labels.push({ 
+          latlng: [p.label_lat, p.label_lng], 
+          radius: p.label_radius || 0,
+          text: String(p.plot_no)
+        });
       }
     }
 
