@@ -312,6 +312,15 @@ def admin_get_filters(current_user: dict = Depends(auth.get_current_admin)):
     return admin_db.get_filter_options()
 
 
+@app.get("/api/admin/lookup/plots")
+def admin_lookup_plots(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(12, ge=1, le=50),
+    current_user: dict = Depends(auth.get_current_admin)
+):
+    return admin_db.lookup_plots(query=q, limit=limit)
+
+
 @app.get("/api/admin/tables/{table}")
 def admin_list_table_records(
     table: str,

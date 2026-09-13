@@ -1053,6 +1053,199 @@ body {
   background-color: var(--bg-secondary);
 }
 
+/* Dossier-Style Compact Record Modal */
+.record-dialog {
+  max-width: 490px;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+}
+
+.record-dialog .modal-header {
+  padding: 0.75rem 1.15rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modal-badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+
+.record-dialog .modal-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.record-dialog .modal-body.dossier-form-body {
+  padding: 0.85rem 1.15rem;
+  max-height: calc(88vh - 100px);
+  overflow-y: auto;
+  position: relative;
+}
+
+.record-dialog .modal-footer {
+  padding: 0.65rem 1.15rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+/* 2-Column Compact Grid */
+.dossier-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem 0.75rem;
+}
+
+.dossier-col-2 {
+  grid-column: span 2;
+}
+
+.dossier-form-group {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  margin-bottom: 0.15rem;
+}
+
+.dossier-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.2rem;
+}
+
+.dossier-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.dossier-label .req {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.uid-gen-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.12);
+  color: #8b5cf6;
+  cursor: pointer;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.uid-gen-badge:hover {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+.uid-gen-badge.custom {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.dossier-input,
+.dossier-select {
+  height: 31px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-main);
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+  width: 100%;
+}
+
+.dossier-input:focus,
+.dossier-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.15);
+  background: var(--bg-surface);
+}
+
+.dossier-input.highlight-auto {
+  background: rgba(16, 185, 129, 0.14) !important;
+  border-color: rgba(16, 185, 129, 0.6) !important;
+  transition: background-color 0.8s ease, border-color 0.8s ease;
+}
+
+/* Autocomplete Suggestion Dropdown */
+.plot-suggestions-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 1050;
+}
+
+.plot-suggestion-item {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.775rem;
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.plot-suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.plot-suggestion-item:hover,
+.plot-suggestion-item.active {
+  background: var(--primary-light, rgba(22, 163, 74, 0.1));
+}
+
+.suggestion-main {
+  font-weight: 600;
+  color: var(--text-main);
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.775rem;
+}
+
+.suggestion-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+@media (max-width: 520px) {
+  .dossier-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .dossier-col-2 {
+    grid-column: span 1;
+  }
+}
+
 /* Toast Container */
 .toast-container {
   position: fixed;

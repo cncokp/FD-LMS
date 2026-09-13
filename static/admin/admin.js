@@ -761,9 +761,66 @@
     }
   }
 
+  let lastMatchedPlotData = null;
+
   function renderModalFields(record) {
-    const meta = TABLE_META[state.activeTable];
-    let html = '';
+    const table = state.activeTable;
+    const meta = TABLE_META[table];
+    if (!meta) return;
+
+    lastMatchedPlotData = null;
+    let html = '<div class="dossier-form-grid">';
+
+    // Datalists for standard options
+    const beatsOptions = (state.filterOptions.beats || []).map(b => `<option value="${b}">`).join('');
+    const mouzasOptions = (state.filterOptions.mouzas || []).map(m => `<option value="${m}">`).join('');
+
+    html += `
+      <datalist id="datalist-beats">${beatsOptions}</datalist>
+      <datalist id="datalist-mouzas">${mouzasOptions}</datalist>
+      <datalist id="datalist-structures">
+        <option value="Residential (Tin-shed)">
+        <option value="Residential (Pacca)">
+        <option value="Commercial / Shop">
+        <option value="Boundary Wall / Fencing">
+        <option value="Agricultural Farming">
+        <option value="Pond / Fishery">
+        <option value="Factory / Warehouse Shed">
+        <option value="Brick Kiln">
+        <option value="Religious / Community">
+      </datalist>
+      <datalist id="datalist-actions">
+        <option value="Notice Served">
+        <option value="Eviction Proposed">
+        <option value="Forest Case Filed">
+        <option value="Demolition Executed">
+        <option value="Under Field Investigation">
+        <option value="Eviction Under Process">
+        <option value="High Court Writ Stay">
+      </datalist>
+      <datalist id="datalist-legal">
+        <option value="6 Dhara">
+        <option value="20 Dhara">
+        <option value="4 Dhara">
+        <option value="Reserved Forest">
+        <option value="Protected Forest">
+        <option value="Acquired Land">
+        <option value="Vested Property">
+      </datalist>
+      <datalist id="datalist-sec20">
+        <option value="Gazetted (Sec 20)">
+        <option value="Proposed Sec 20">
+        <option value="Published">
+        <option value="Pending">
+        <option value="None">
+      </datalist>
+      <datalist id="datalist-sec6">
+        <option value="Sec 6 Notified">
+        <option value="Sec 6 Published">
+        <option value="In Process">
+        <option value="None">
+      </datalist>
+    `;
 
     meta.fields.forEach(f => {
       let val = record[f.name] !== undefined && record[f.name] !== null ? record[f.name] : '';
@@ -772,23 +829,327 @@
         else if (f.name === 'rs_uid') val = record.uid2 || '';
         else if (f.name === 'uid') val = record.cs_uid || '';
       }
+
+      const isCol2 = ['encroacher_name', 'remarks'].includes(f.name);
+      const colClass = isCol2 ? 'dossier-col-2' : '';
       const stepAttr = f.step ? `step="${f.step}"` : '';
       const reqAttr = f.required ? 'required' : '';
+      const reqStar = f.required ? '<span class="req">*</span>' : '';
+
+      // Datalist mapping
+      let listAttr = '';
+      if (f.name === 'structure_type') listAttr = 'list="datalist-structures"';
+      else if (f.name === 'action_taken') listAttr = 'list="datalist-actions"';
+      else if (f.name === 'legal_status') listAttr = 'list="datalist-legal"';
+      else if (f.name === 'sec_20') listAttr = 'list="datalist-sec20"';
+      else if (f.name === 'sec_6') listAttr = 'list="datalist-sec6"';
+      else if (f.name === 'beat_name') listAttr = 'list="datalist-beats"';
+      else if (f.name === 'mouza') listAttr = 'list="datalist-mouzas"';
+
+      // Auto-gen UID badge
+      let uidBadgeHtml = '';
+      if (f.name === 'cs_uid' || f.name === 'rs_uid') {
+        const isSet = Boolean(val);
+        uidBadgeHtml = `<span class="uid-gen-badge ${isSet ? 'custom' : ''}" id="badge-auto-${f.name}" data-uid-field="${f.name}" title="Click to auto-generate UID">${isSet ? '✏️ Custom' : '⚡ Auto'}</span>`;
+      }
+
+      const isPlotNo = f.name === 'cs_plot_no' || f.name === 'rs_plot_no';
+      const autocompleteAttr = isPlotNo ? 'autocomplete="off"' : '';
 
       html += `
-        <div class="form-group">
-          <label for="field-${f.name}">${f.label} ${f.required ? '<span class="text-danger">*</span>' : ''}</label>
-          <input type="${f.type}" id="field-${f.name}" name="${f.name}" value="${val}" class="form-input" ${stepAttr} ${reqAttr}>
+        <div class="dossier-form-group ${colClass}">
+          <div class="dossier-label-row">
+            <label for="field-${f.name}" class="dossier-label">
+              <span>${f.label}</span>
+              ${reqStar}
+            </label>
+            ${uidBadgeHtml}
+          </div>
+          <input 
+            type="${f.type}" 
+            id="field-${f.name}" 
+            name="${f.name}" 
+            value="${val}" 
+            class="dossier-input" 
+            ${stepAttr} 
+            ${reqAttr} 
+            ${listAttr} 
+            ${autocompleteAttr}
+            placeholder="${isPlotNo ? 'Type to search or enter plot #' : ''}"
+          >
+          ${isPlotNo ? `<div class="plot-suggestions-dropdown" id="dropdown-${f.name}" style="display: none;"></div>` : ''}
         </div>
       `;
     });
 
+    html += '</div>';
     el.modalFormFields.innerHTML = html;
+
+    // Attach interactive behavior
+    attachInteractiveFormHandlers();
+  }
+
+  function attachInteractiveFormHandlers() {
+    const csPlotInput = document.getElementById('field-cs_plot_no');
+    const rsPlotInput = document.getElementById('field-rs_plot_no');
+    const csUidInput = document.getElementById('field-cs_uid');
+    const rsUidInput = document.getElementById('field-rs_uid');
+    const csJlInput = document.getElementById('field-cs_jl');
+    const rsJlInput = document.getElementById('field-rs_jl');
+    const mouzaInput = document.getElementById('field-mouza');
+    const beatInput = document.getElementById('field-beat_name');
+    const khatianInput = document.getElementById('field-khatian_no') || document.getElementById('field-rs_khatian');
+    const legalStatusInput = document.getElementById('field-legal_status');
+
+    // Helper: flash field to indicate auto-fill
+    function flashField(input) {
+      if (!input) return;
+      input.classList.add('highlight-auto');
+      setTimeout(() => input.classList.remove('highlight-auto'), 1200);
+    }
+
+    // Helper: compute UID
+    function computeUid(plotNo, jlNo) {
+      const p = String(plotNo || '').trim();
+      const j = String(jlNo || '').trim();
+      if (!p) return '';
+      if (j) return `${j}${p}`;
+      return p;
+    }
+
+    // Helper: update UID badge state
+    function updateUidBadge(field, isAuto) {
+      const badge = document.getElementById(`badge-auto-${field}`);
+      if (!badge) return;
+      if (isAuto) {
+        badge.textContent = '⚡ Auto';
+        badge.className = 'uid-gen-badge';
+        badge.title = 'Auto-generated from Plot and JL';
+      } else {
+        badge.textContent = '✏️ Custom';
+        badge.className = 'uid-gen-badge custom';
+        badge.title = 'Custom UID (click to re-generate)';
+      }
+    }
+
+    // Auto-generate click buttons
+    ['cs_uid', 'rs_uid'].forEach(fName => {
+      const badge = document.getElementById(`badge-auto-${fName}`);
+      if (badge) {
+        badge.addEventListener('click', () => {
+          if (fName === 'cs_uid') {
+            const plot = csPlotInput ? csPlotInput.value.trim() : '';
+            const jl = csJlInput ? csJlInput.value.trim() : (lastMatchedPlotData ? lastMatchedPlotData.cs_jl : '');
+            if (plot && csUidInput) {
+              csUidInput.value = computeUid(plot, jl);
+              flashField(csUidInput);
+              updateUidBadge('cs_uid', true);
+            }
+          } else if (fName === 'rs_uid') {
+            const plot = rsPlotInput ? rsPlotInput.value.trim() : '';
+            const jl = rsJlInput ? rsJlInput.value.trim() : (lastMatchedPlotData ? (lastMatchedPlotData.rs_jl || lastMatchedPlotData.cs_jl) : '');
+            if (plot && rsUidInput) {
+              rsUidInput.value = computeUid(plot, jl);
+              flashField(rsUidInput);
+              updateUidBadge('rs_uid', true);
+            }
+          }
+        });
+      }
+    });
+
+    // Detect manual edit on UID inputs
+    if (csUidInput) {
+      csUidInput.addEventListener('input', () => updateUidBadge('cs_uid', false));
+    }
+    if (rsUidInput) {
+      rsUidInput.addEventListener('input', () => updateUidBadge('rs_uid', false));
+    }
+
+    // Setup autocomplete and auto-generate for a plot input
+    function setupPlotAutocomplete(plotInput, fieldName) {
+      if (!plotInput) return;
+      const dropdown = document.getElementById(`dropdown-${fieldName}`);
+      if (!dropdown) return;
+
+      let debounceTimer = null;
+
+      plotInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        clearTimeout(debounceTimer);
+
+        if (!query) {
+          dropdown.style.display = 'none';
+          dropdown.innerHTML = '';
+          return;
+        }
+
+        // Live calculation if JL is available
+        if (fieldName === 'cs_plot_no' && csUidInput) {
+          const jl = csJlInput ? csJlInput.value.trim() : (lastMatchedPlotData ? lastMatchedPlotData.cs_jl : '');
+          if (jl) {
+            csUidInput.value = `${jl}${query}`;
+            updateUidBadge('cs_uid', true);
+          }
+        } else if (fieldName === 'rs_plot_no' && rsUidInput) {
+          const jl = rsJlInput ? rsJlInput.value.trim() : (lastMatchedPlotData ? (lastMatchedPlotData.rs_jl || lastMatchedPlotData.cs_jl) : '');
+          if (jl) {
+            rsUidInput.value = `${jl}${query}`;
+            updateUidBadge('rs_uid', true);
+          }
+        }
+
+        debounceTimer = setTimeout(async () => {
+          try {
+            const res = await fetch(`/api/admin/lookup/plots?q=${encodeURIComponent(query)}&limit=8`, {
+              headers: getAuthHeaders()
+            });
+            if (!res.ok) return;
+            const matches = await res.json();
+            renderPlotSuggestions(dropdown, matches, fieldName);
+          } catch (err) {
+            console.warn('Plot lookup error:', err);
+          }
+        }, 160);
+      });
+
+      // Hide dropdown on blur/outside click
+      document.addEventListener('click', (e) => {
+        if (!plotInput.contains(e.target) && !dropdown.contains(e.target)) {
+          dropdown.style.display = 'none';
+        }
+      });
+    }
+
+    function renderPlotSuggestions(dropdown, matches, currentField) {
+      if (!matches || matches.length === 0) {
+        dropdown.style.display = 'none';
+        dropdown.innerHTML = '';
+        return;
+      }
+
+      let itemsHtml = '';
+      matches.forEach((m, idx) => {
+        const csInfo = m.cs_plot_no ? `CS #${m.cs_plot_no}` : '';
+        const rsInfo = m.rs_plot_no ? `RS #${m.rs_plot_no}` : '';
+        const plotTitle = [csInfo, rsInfo].filter(Boolean).join(' ⟷ ') || `Plot #${m.cs_plot_no || m.rs_plot_no}`;
+        const mouzaInfo = m.mouza ? `Mouza: ${m.mouza}` : '';
+        const jlInfo = (m.cs_jl || m.rs_jl) ? `JL: ${m.cs_jl || m.rs_jl}` : '';
+        const uidInfo = m.cs_uid ? `CS UID: ${m.cs_uid}` : (m.rs_uid ? `RS UID: ${m.rs_uid}` : '');
+        const subDetails = [mouzaInfo, jlInfo, uidInfo].filter(Boolean).join(' • ');
+
+        itemsHtml += `
+          <div class="plot-suggestion-item" data-idx="${idx}">
+            <div class="suggestion-main">
+              <span>${plotTitle}</span>
+              <span class="badge ${m.source === 'parcel_info' ? 'badge-success' : 'badge-info'} text-xs">${m.source === 'parcel_info' ? 'Registered' : 'GIS'}</span>
+            </div>
+            <div class="suggestion-sub">${subDetails}</div>
+          </div>
+        `;
+      });
+
+      dropdown.innerHTML = itemsHtml;
+      dropdown.style.display = 'block';
+
+      // Attach click events
+      dropdown.querySelectorAll('.plot-suggestion-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const idx = parseInt(item.dataset.idx, 10);
+          const sel = matches[idx];
+          if (!sel) return;
+          applySelectedPlot(sel, currentField);
+          dropdown.style.display = 'none';
+        });
+      });
+    }
+
+    function applySelectedPlot(plot, fromField) {
+      lastMatchedPlotData = plot;
+
+      // Fill CS Plot & UID
+      if (plot.cs_plot_no && csPlotInput) {
+        csPlotInput.value = plot.cs_plot_no;
+        flashField(csPlotInput);
+      }
+      if (plot.cs_uid && csUidInput) {
+        csUidInput.value = plot.cs_uid;
+        flashField(csUidInput);
+        updateUidBadge('cs_uid', true);
+      } else if (plot.cs_plot_no && plot.cs_jl && csUidInput) {
+        csUidInput.value = `${plot.cs_jl}${plot.cs_plot_no}`;
+        flashField(csUidInput);
+        updateUidBadge('cs_uid', true);
+      }
+
+      // Fill RS Plot & UID
+      if (plot.rs_plot_no && rsPlotInput) {
+        rsPlotInput.value = plot.rs_plot_no;
+        flashField(rsPlotInput);
+      }
+      if (plot.rs_uid && rsUidInput) {
+        rsUidInput.value = plot.rs_uid;
+        flashField(rsUidInput);
+        updateUidBadge('rs_uid', true);
+      } else if (plot.rs_plot_no && (plot.rs_jl || plot.cs_jl) && rsUidInput) {
+        rsUidInput.value = `${plot.rs_jl || plot.cs_jl}${plot.rs_plot_no}`;
+        flashField(rsUidInput);
+        updateUidBadge('rs_uid', true);
+      }
+
+      // Fill secondary attributes if available and empty
+      if (plot.khatian_no && khatianInput && !khatianInput.value) {
+        khatianInput.value = plot.khatian_no;
+        flashField(khatianInput);
+      }
+      if (plot.mouza && mouzaInput && !mouzaInput.value) {
+        mouzaInput.value = plot.mouza;
+        flashField(mouzaInput);
+      }
+      if (plot.beat_name && beatInput && !beatInput.value) {
+        beatInput.value = plot.beat_name;
+        flashField(beatInput);
+      }
+      if (plot.cs_jl && csJlInput && !csJlInput.value) {
+        csJlInput.value = plot.cs_jl;
+        flashField(csJlInput);
+      }
+      if (plot.rs_jl && rsJlInput && !rsJlInput.value) {
+        rsJlInput.value = plot.rs_jl;
+        flashField(rsJlInput);
+      }
+      if (plot.legal_status && legalStatusInput && !legalStatusInput.value) {
+        legalStatusInput.value = plot.legal_status;
+        flashField(legalStatusInput);
+      }
+    }
+
+    setupPlotAutocomplete(csPlotInput, 'cs_plot_no');
+    setupPlotAutocomplete(rsPlotInput, 'rs_plot_no');
+
+    // Link JL changes in parcel_info to auto-recompute UID
+    if (csJlInput) {
+      csJlInput.addEventListener('input', () => {
+        if (csPlotInput && csUidInput && csPlotInput.value.trim()) {
+          csUidInput.value = `${csJlInput.value.trim()}${csPlotInput.value.trim()}`;
+          updateUidBadge('cs_uid', true);
+        }
+      });
+    }
+    if (rsJlInput) {
+      rsJlInput.addEventListener('input', () => {
+        if (rsPlotInput && rsUidInput && rsPlotInput.value.trim()) {
+          rsUidInput.value = `${rsJlInput.value.trim()}${rsPlotInput.value.trim()}`;
+          updateUidBadge('rs_uid', true);
+        }
+      });
+    }
   }
 
   function closeRecordModal() {
     el.recordModal.style.display = 'none';
     state.editingRecordId = null;
+    lastMatchedPlotData = null;
   }
 
   async function handleSaveRecord(e) {

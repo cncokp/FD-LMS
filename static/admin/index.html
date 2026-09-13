@@ -578,18 +578,21 @@
 
   <!-- RECORD EDIT / CREATE MODAL -->
   <div id="record-modal" class="modal-backdrop" style="display: none;">
-    <div class="modal-dialog">
+    <div class="modal-dialog record-dialog">
       <div class="modal-header">
-        <h3 class="modal-title" id="record-modal-title">Edit Record</h3>
+        <div class="modal-header-title-group">
+          <span class="modal-badge-dot"></span>
+          <h3 class="modal-title" id="record-modal-title">Edit Record</h3>
+        </div>
         <button class="modal-close-btn" id="modal-close-btn">&times;</button>
       </div>
       <form id="record-form">
-        <div class="modal-body" id="modal-form-fields">
+        <div class="modal-body dossier-form-body" id="modal-form-fields">
           <!-- Dynamically populated fields -->
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline" id="modal-cancel-btn">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="modal-save-btn">Save Changes</button>
+          <button type="button" class="btn btn-outline btn-sm" id="modal-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" id="modal-save-btn">Save Record</button>
         </div>
       </form>
     </div>

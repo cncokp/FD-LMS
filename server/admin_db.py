@@ -362,6 +362,100 @@ def get_filter_options() -> Dict[str, List[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Interactive Plot & UID Lookup
+# ---------------------------------------------------------------------------
+def lookup_plots(query: str, limit: int = 12) -> List[Dict[str, Any]]:
+    _init_snapshot_records_if_needed()
+    q = str(query or "").strip().lower()
+    if not q:
+        return []
+
+    results: List[Dict[str, Any]] = []
+    seen = set()
+
+    # 1. Check parcel_info (registered linkage of CS plot & RS plot)
+    for p in _snapshot_records.get("parcel_info", []):
+        cp = str(p.get("cs_plot_no") or "").strip()
+        rp = str(p.get("rs_plot_no") or "").strip()
+        c_uid = str(p.get("cs_uid") or p.get("uid") or "").strip()
+        r_uid = str(p.get("rs_uid") or p.get("uid2") or "").strip()
+        m = str(p.get("mouza") or "").strip()
+
+        if cp.lower() == q or rp.lower() == q or c_uid.lower() == q or r_uid.lower() == q or (len(q) >= 2 and (cp.lower().startswith(q) or rp.lower().startswith(q))):
+            key = (cp, rp, m)
+            if key not in seen:
+                seen.add(key)
+                results.append({
+                    "cs_plot_no": cp,
+                    "rs_plot_no": rp,
+                    "cs_uid": c_uid or (f"{p.get('cs_jl')}{cp}" if p.get('cs_jl') and cp else ""),
+                    "rs_uid": r_uid or (f"{p.get('rs_jl')}{rp}" if p.get('rs_jl') and rp else ""),
+                    "cs_jl": str(p.get("cs_jl") or "").strip(),
+                    "rs_jl": str(p.get("rs_jl") or "").strip(),
+                    "mouza": m,
+                    "beat_name": str(p.get("beat_name") or "").strip(),
+                    "range": str(p.get("range") or "").strip(),
+                    "khatian_no": str(p.get("khatian_no") or "").strip(),
+                    "legal_status": str(p.get("legal_status") or "").strip(),
+                    "source": "parcel_info"
+                })
+                if len(results) >= limit:
+                    return results
+
+    # 2. Check cs_plots (CS digitized GIS boundaries)
+    for p in _snapshot_records.get("cs_plots", []):
+        cp = str(p.get("plot_no") or "").strip()
+        u = str(p.get("uid") or "").strip()
+        m = str(p.get("mouza") or "").strip()
+        jl = str(p.get("jl_no") or "").strip()
+
+        if cp.lower() == q or u.lower() == q or (len(q) >= 2 and cp.lower().startswith(q)):
+            key = (cp, "", m)
+            if key not in seen:
+                seen.add(key)
+                results.append({
+                    "cs_plot_no": cp,
+                    "rs_plot_no": "",
+                    "cs_uid": u or (f"{jl}{cp}" if jl and cp else ""),
+                    "rs_uid": "",
+                    "cs_jl": jl,
+                    "rs_jl": "",
+                    "mouza": m,
+                    "beat_name": str(p.get("beat_name") or "").strip(),
+                    "source": "cs_plots"
+                })
+                if len(results) >= limit:
+                    return results
+
+    # 3. Check rs_plots (RS digitized GIS boundaries)
+    for p in _snapshot_records.get("rs_plots", []):
+        rp = str(p.get("plot_no") or "").strip()
+        u = str(p.get("rs_uid") or p.get("uid") or "").strip()
+        m = str(p.get("mouza") or "").strip()
+        jl = str(p.get("jl_no") or "").strip()
+
+        if rp.lower() == q or u.lower() == q or (len(q) >= 2 and rp.lower().startswith(q)):
+            key = ("", rp, m)
+            if key not in seen:
+                seen.add(key)
+                results.append({
+                    "cs_plot_no": "",
+                    "rs_plot_no": rp,
+                    "cs_uid": "",
+                    "rs_uid": u or (f"{jl}{rp}" if jl and rp else ""),
+                    "cs_jl": "",
+                    "rs_jl": jl,
+                    "mouza": m,
+                    "beat_name": str(p.get("beat_name") or "").strip(),
+                    "source": "rs_plots"
+                })
+                if len(results) >= limit:
+                    return results
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Table CRUD Operations
 # ---------------------------------------------------------------------------
 def list_records(
