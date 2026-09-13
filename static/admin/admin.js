@@ -135,7 +135,6 @@
     statEncroachedAcre: document.getElementById('stat-encroached-acre'),
     statPlots: document.getElementById('stat-plots'),
     statRsPlots: document.getElementById('stat-rs-plots'),
-    beatDistributionList: document.getElementById('beat-distribution-list'),
     refreshStatsBtn: document.getElementById('refresh-stats-btn'),
 
     // Table view
@@ -268,12 +267,22 @@
       });
     });
 
-    // Quick action buttons in dashboard
-    document.querySelectorAll('[data-action="switch-tab"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tab = btn.dataset.target;
-        switchTab(tab);
-      });
+    // Quick action buttons & dataset jump links in dashboard
+    document.addEventListener('click', (e) => {
+      const jumpBtn = e.target.closest('.action-tile, [data-jump], [data-action="switch-tab"]');
+      if (!jumpBtn) return;
+
+      const target = jumpBtn.dataset.jump || jumpBtn.dataset.target;
+      const action = jumpBtn.dataset.action;
+      if (target) {
+        e.preventDefault();
+        switchTab(target);
+        if (action === 'add') {
+          setTimeout(() => {
+            openAddRecordModal();
+          }, 80);
+        }
+      }
     });
 
     if (el.refreshStatsBtn) el.refreshStatsBtn.addEventListener('click', loadDashboardStats);
@@ -546,18 +555,17 @@
       if (el.statPlots) el.statPlots.textContent = (stats.total_cs_plots || 0).toLocaleString();
       if (el.statRsPlots) el.statRsPlots.textContent = (stats.total_rs_plots || 0).toLocaleString();
 
-      if (el.beatDistributionList && stats.beat_distribution) {
-        let html = '';
-        for (const [beat, count] of Object.entries(stats.beat_distribution)) {
-          html += `
-            <div class="beat-stat-item">
-              <span class="beat-name">🌲 ${beat}</span>
-              <span class="beat-count mono">${count.toLocaleString()}</span>
-            </div>
-          `;
-        }
-        el.beatDistributionList.innerHTML = html;
-      }
+      // Update Spatial Datasets Overview Card
+      const overviewRs = document.getElementById('overview-rs-count');
+      if (overviewRs && stats.total_rs_plots) overviewRs.textContent = stats.total_rs_plots.toLocaleString();
+      const overviewCs = document.getElementById('overview-cs-count');
+      if (overviewCs && stats.total_cs_plots) overviewCs.textContent = stats.total_cs_plots.toLocaleString();
+      const overviewParcels = document.getElementById('overview-parcels-count');
+      if (overviewParcels && stats.total_parcels) overviewParcels.textContent = stats.total_parcels.toLocaleString();
+      const overviewEnc = document.getElementById('overview-enc-count');
+      if (overviewEnc && stats.total_encroachments) overviewEnc.textContent = `${stats.total_encroachments.toLocaleString()} cases (${(stats.total_encroached_acre || 0).toFixed(2)} ac)`;
+      const overviewEngineSource = document.getElementById('overview-engine-source');
+      if (overviewEngineSource && stats.source) overviewEngineSource.textContent = stats.source.includes('Supabase') ? 'Supabase PG' : 'Gzip Cache';
     } catch (e) {
       console.warn('Stats fetch failed:', e);
     }

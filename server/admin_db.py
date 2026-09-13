@@ -289,6 +289,14 @@ def get_admin_stats() -> Dict[str, Any]:
                     enc_row = cur.fetchone()
                     cur.execute("SELECT COUNT(*) as cnt FROM cs_plots;")
                     cs_cnt = cur.fetchone()["cnt"]
+
+                    rs_cnt = len(_snapshot_records.get("rs_plots", []))
+                    try:
+                        cur.execute("SELECT COUNT(*) as cnt FROM rs_plots;")
+                        rs_cnt = cur.fetchone()["cnt"]
+                    except Exception:
+                        pass
+
                     cur.execute("SELECT beat_name, COUNT(*) as cnt FROM cs_plots WHERE beat_name IS NOT NULL AND beat_name != '' GROUP BY beat_name ORDER BY cnt DESC;")
                     beat_rows = cur.fetchall()
 
@@ -297,6 +305,7 @@ def get_admin_stats() -> Dict[str, Any]:
                         "total_encroachments": enc_row["cnt"],
                         "total_encroached_acre": round(float(enc_row["total_area"]), 2),
                         "total_cs_plots": cs_cnt,
+                        "total_rs_plots": rs_cnt,
                         "beat_distribution": {r["beat_name"]: r["cnt"] for r in beat_rows},
                         "source": "Supabase PostgreSQL (Live)"
                     }

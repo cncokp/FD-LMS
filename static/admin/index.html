@@ -97,14 +97,14 @@
           </button>
 
           <div class="nav-section-label">GIS Spatial Layers (Fixed)</div>
-          <button class="nav-item" data-tab="cs_plots">
-            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
-            <span>Plot Boundary (CS)</span>
-          </button>
-
           <button class="nav-item" data-tab="rs_plots">
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm6 9.09c0 4-2.55 7.7-6 8.83-3.45-1.13-6-4.82-6-8.83v-4.7l6-2.25 6 2.25v4.7z"/></svg>
             <span>Plot Boundary (RS)</span>
+          </button>
+
+          <button class="nav-item" data-tab="cs_plots">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+            <span>Plot Boundary (CS)</span>
           </button>
 
           <div class="nav-section-label">Tabular Data (Editable)</div>
@@ -139,7 +139,7 @@
           <div class="pane-header">
             <div>
               <h1 class="pane-title">System Overview</h1>
-              <p class="pane-subtitle">Real-time statistics across Gazipur Forest Division cadastral and encroachment databases</p>
+              <p class="pane-subtitle">Real-time management across Gazipur Forest Division cadastral (RS & CS) and land record databases</p>
             </div>
             <button class="btn btn-secondary btn-sm" id="refresh-stats-btn">
               <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -149,6 +149,28 @@
 
           <!-- KPI STATS CARDS -->
           <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon-wrapper stat-purple">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm6 9.09c0 4-2.55 7.7-6 8.83-3.45-1.13-6-4.82-6-8.83v-4.7l6-2.25 6 2.25v4.7z"/></svg>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value" id="stat-rs-plots">-</div>
+                <div class="stat-label">Cadastral RS Plots</div>
+                <div class="stat-desc">Primary boundary (Default layer)</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon-wrapper stat-blue">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value" id="stat-plots">-</div>
+                <div class="stat-label">Cadastral CS Plots</div>
+                <div class="stat-desc">Baseline survey polygon layer</div>
+              </div>
+            </div>
+
             <div class="stat-card">
               <div class="stat-icon-wrapper stat-green">
                 <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
@@ -178,36 +200,14 @@
               <div class="stat-info">
                 <div class="stat-value" id="stat-encroached-acre">-</div>
                 <div class="stat-label">Encroached Area (Acres)</div>
-                <div class="stat-desc">Total cumulative encroached area</div>
-              </div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-icon-wrapper stat-blue">
-                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
-              </div>
-              <div class="stat-info">
-                <div class="stat-value" id="stat-plots">-</div>
-                <div class="stat-label">Cadastral CS Plots</div>
-                <div class="stat-desc">Digitized polygon boundaries</div>
+                <div class="stat-desc">Total cumulative occupied area</div>
               </div>
             </div>
           </div>
 
-          <!-- BEAT DISTRIBUTION & QUICK ACTIONS -->
+          <!-- DASHBOARD GRID: QUICK OPERATIONS & SYSTEM ARCHITECTURE -->
           <div class="dashboard-grid">
-            <div class="card">
-              <div class="card-header">
-                <h2 class="card-title">Beat Distribution</h2>
-                <span class="card-tag">Cadastral Coverage</span>
-              </div>
-              <div class="card-body">
-                <div id="beat-distribution-list" class="beat-distribution-list">
-                  <div class="placeholder-text">Loading beat distribution...</div>
-                </div>
-              </div>
-            </div>
-
+            <!-- QUICK OPERATIONS CARD -->
             <div class="card">
               <div class="card-header">
                 <h2 class="card-title">Quick Operations</h2>
@@ -238,6 +238,22 @@
                   </div>
                 </button>
 
+                <button class="action-tile" data-jump="rs_plots">
+                  <div class="action-icon">🗺️</div>
+                  <div class="action-text">
+                    <strong>Manage RS Cadastre</strong>
+                    <span>Browse & search 19,463 RS plot boundaries</span>
+                  </div>
+                </button>
+
+                <button class="action-tile" data-jump="cs_plots">
+                  <div class="action-icon">📐</div>
+                  <div class="action-text">
+                    <strong>Manage CS Cadastre</strong>
+                    <span>Browse & search 11,312 CS plot boundaries</span>
+                  </div>
+                </button>
+
                 <button class="action-tile" data-jump="cache_sync">
                   <div class="action-icon">⚡</div>
                   <div class="action-text">
@@ -247,10 +263,91 @@
                 </button>
               </div>
             </div>
+
+            <!-- SPATIAL DATASETS & SYSTEM ARCHITECTURE CARD -->
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">Spatial Datasets & System Architecture</h2>
+                <span class="card-tag">Current Setup</span>
+              </div>
+              <div class="card-body">
+                <div class="dataset-list">
+                  <div class="dataset-item">
+                    <div class="dataset-main">
+                      <div class="dataset-title-row">
+                        <span class="dataset-title">Plot Boundary (RS)</span>
+                        <span class="badge badge-purple">Primary Boundary (Default)</span>
+                      </div>
+                      <div class="dataset-desc">19,463 digitized polygons • Optimized label positioning & radius</div>
+                    </div>
+                    <div class="dataset-meta">
+                      <span class="dataset-count mono" id="overview-rs-count">19,463</span>
+                      <button class="btn btn-outline btn-xs" data-jump="rs_plots">Explore &rarr;</button>
+                    </div>
+                  </div>
+
+                  <div class="dataset-item">
+                    <div class="dataset-main">
+                      <div class="dataset-title-row">
+                        <span class="dataset-title">Plot Boundary (CS)</span>
+                        <span class="badge badge-info">Baseline Survey</span>
+                      </div>
+                      <div class="dataset-desc">11,312 digitized polygons • Historical cadastral survey layer</div>
+                    </div>
+                    <div class="dataset-meta">
+                      <span class="dataset-count mono" id="overview-cs-count">11,312</span>
+                      <button class="btn btn-outline btn-xs" data-jump="cs_plots">Explore &rarr;</button>
+                    </div>
+                  </div>
+
+                  <div class="dataset-item">
+                    <div class="dataset-main">
+                      <div class="dataset-title-row">
+                        <span class="dataset-title">Parcel Information</span>
+                        <span class="badge badge-success">Official Gazette</span>
+                      </div>
+                      <div class="dataset-desc">3,456 forest records • Dual UID linkage (CS UID & RS UID2)</div>
+                    </div>
+                    <div class="dataset-meta">
+                      <span class="dataset-count mono" id="overview-parcels-count">3,456</span>
+                      <button class="btn btn-outline btn-xs" data-jump="parcel_info">Manage &rarr;</button>
+                    </div>
+                  </div>
+
+                  <div class="dataset-item">
+                    <div class="dataset-main">
+                      <div class="dataset-title-row">
+                        <span class="dataset-title">Encroachment Details</span>
+                        <span class="badge badge-danger">Active Cases</span>
+                      </div>
+                      <div class="dataset-desc">224 documented cases • 59.83 acres • Eviction & legal tracking</div>
+                    </div>
+                    <div class="dataset-meta">
+                      <span class="dataset-count mono" id="overview-enc-count">224</span>
+                      <button class="btn btn-outline btn-xs" data-jump="encroachment_info">Manage &rarr;</button>
+                    </div>
+                  </div>
+
+                  <div class="dataset-item">
+                    <div class="dataset-main">
+                      <div class="dataset-title-row">
+                        <span class="dataset-title">Cache & Storage Pipeline</span>
+                        <span class="badge badge-warning" id="overview-engine-badge">High Performance</span>
+                      </div>
+                      <div class="dataset-desc">GeoJSON.gz streaming & unified parcel dossier cache</div>
+                    </div>
+                    <div class="dataset-meta">
+                      <span class="dataset-count mono" id="overview-engine-source">Active</span>
+                      <button class="btn btn-outline btn-xs" data-jump="cache_sync">Sync &rarr;</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
-        <!-- TAB: GENERIC TABLE VIEW (Parcels, Encroachments, CS Plots) -->
+        <!-- TAB: GENERIC TABLE VIEW (Parcels, Encroachments, RS Plots, CS Plots) -->
         <section id="tab-table-view" class="tab-pane">
           <div class="pane-header">
             <div>
