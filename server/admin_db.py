@@ -84,6 +84,49 @@ def normalize_mouza(name: str) -> str:
     return str(name).strip()
 
 
+CANONICAL_BEAT_MAP = {
+    "park": "Park Beat",
+    "park beat": "Park Beat",
+    "পার্ক": "Park Beat",
+    "পার্ক বিট": "Park Beat",
+    "bankhoira": "Bankhoira Beat",
+    "bankhoira beat": "Bankhoira Beat",
+    "বানখৈরা": "Bankhoira Beat",
+    "বানখৈরা বিট": "Bankhoira Beat",
+    "baruipara": "Baruipara Beat",
+    "barui para": "Baruipara Beat",
+    "baruipara beat": "Baruipara Beat",
+    "বারুইপাড়া": "Baruipara Beat",
+    "বারুইপাড়া বিট": "Baruipara Beat",
+    "rajendrapur west": "Rajendrapur West Beat",
+    "rajendrapur west beat": "Rajendrapur West Beat",
+    "bk bari": "BK Bari Beat",
+    "b k bari": "BK Bari Beat",
+    "bk bari beat": "BK Bari Beat",
+    "bhabanipur": "Bhabanipur Beat",
+    "bhabanipur beat": "Bhabanipur Beat",
+    "baupara": "Baupara Beat",
+    "baupara beat": "Baupara Beat",
+    "বাউপাড়া": "Baupara Beat",
+    "বাউপাড়া বিট": "Baupara Beat",
+    "dogri": "BK Bari Beat",
+}
+
+def normalize_beat(name: str) -> str:
+    if not name:
+        return ""
+    clean = str(name).strip().lower()
+    if clean in CANONICAL_BEAT_MAP:
+        return CANONICAL_BEAT_MAP[clean]
+    no_space = clean.replace(" ", "").replace("_", "").replace("-", "")
+    if no_space in CANONICAL_BEAT_MAP:
+        return CANONICAL_BEAT_MAP[no_space]
+    if clean.endswith(" beat"):
+        return str(name).strip()
+    return f"{str(name).strip()} Beat"
+
+
+
 # ---------------------------------------------------------------------------
 # In-Memory / Snapshot Fallback Data Store (ensures 100% uptime even if offline)
 # ---------------------------------------------------------------------------
@@ -112,6 +155,17 @@ def _init_snapshot_records_if_needed():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 fetched_parcels = [r for sub in ex.map(_fetch_c, chunks) for r in sub]
 
+            # Pre-index spatial beat names from verified bulk dossier snapshot
+            dossier_beats = {}
+            try:
+                bd_bytes = db.get_bulk_dossier_json_bytes()
+                bd_raw = json.loads(bd_bytes.decode("utf-8"))
+                for u, v in bd_raw.get("by_uid", {}).items():
+                    if isinstance(v, dict) and v.get("beat_name"):
+                        dossier_beats[str(u).strip()] = v["beat_name"]
+            except Exception as ex_bd:
+                print(f"[AdminDB] Note reading dossier beats: {ex_bd}")
+
             for r in fetched_parcels:
                 c_uid = str(r.get("cs_uid") or r.get("uid") or "").strip()
                 r_uid = str(r.get("rs_uid") or r.get("uid2") or "").strip()
@@ -125,6 +179,7 @@ def _init_snapshot_records_if_needed():
                 r["uid"] = c_uid
                 r["rs_uid"] = r_uid
                 r["uid2"] = r_uid
+                r["beat_name"] = dossier_beats.get(c_uid) or normalize_beat(r.get("beat_name"))
                 parcels.append(r)
 
             # Encroachments
@@ -144,6 +199,7 @@ def _init_snapshot_records_if_needed():
                 e["rs_uid"] = r_uid
                 e["uid2"] = r_uid
                 e["mouza"] = e.get("mouza") or ""
+                e["beat_name"] = "Park Beat"
                 encroachments.append(e)
 
             loaded_from_live = bool(parcels)
@@ -165,7 +221,7 @@ def _init_snapshot_records_if_needed():
                 cs_plot_no = val.get("cs_plot_no") or ""
                 mouza = val.get("mouza") or ""
                 cs_jl = val.get("cs_jl") or ""
-                beat_name = val.get("beat_name") or ""
+                beat_name = normalize_beat(val.get("beat_name") or "")
                 range_name = val.get("range") or ""
                 total_area = val.get("total_area")
                 area_fd = val.get("total_area_fd")
@@ -389,7 +445,9 @@ def get_filter_options() -> Dict[str, List[str]]:
             b = p.get("beat_name")
             m = p.get("mouza")
             if b and str(b).strip():
-                beats.add(str(b).strip())
+                b_norm = normalize_beat(str(b).strip())
+                if b_norm:
+                    beats.add(b_norm)
             if m and str(m).strip():
                 m_norm = normalize_mouza(str(m).strip())
                 if m_norm:
@@ -515,10 +573,18 @@ def list_records(
     _init_snapshot_records_if_needed()
     records = _snapshot_records.get(table, [])
 
-    # Filter by beat
+    # Filter by beat (handles canonical beat names and raw variants)
     if beat:
-        beat_norm = beat.strip().lower()
-        records = [r for r in records if (r.get("beat_name") or "").strip().lower() == beat_norm]
+        target_beat = normalize_beat(beat).strip().lower()
+        records = [
+            r for r in records
+            if (
+                normalize_beat(str(r.get("beat_name") or "")).strip().lower() == target_beat
+                or beat.strip().lower() == str(r.get("beat_name") or "").strip().lower()
+                or (target_beat and target_beat in normalize_beat(str(r.get("beat_name") or "")).strip().lower())
+                or (beat.strip().lower() in str(r.get("beat_name") or "").strip().lower())
+            )
+        ]
 
     # Filter by mouza (handles both canonical English and Bengali variants)
     if mouza:
@@ -657,15 +723,30 @@ def create_record(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
     if data.get("rs_uid") and not cleaned.get("uid2"):
         cleaned["uid2"] = str(data["rs_uid"]).strip()
 
-    # Generate UID if missing
+    # Normalize beat_name if provided
+    if cleaned.get("beat_name"):
+        cleaned["beat_name"] = normalize_beat(cleaned["beat_name"])
+
+    # Auto-generate CS UID if missing
     if not cleaned.get("uid") and not cleaned.get("cs_uid"):
-        jl = cleaned.get("cs_jl") or cleaned.get("jl_no") or "0"
+        jl = cleaned.get("cs_jl") or cleaned.get("jl_no") or ""
         pno = cleaned.get("cs_plot_no") or cleaned.get("plot_no") or str(new_id)
-        gen_uid = f"{jl}{pno}"
+        gen_uid = f"{jl}{pno}" if jl else str(pno)
         if "cs_uid" in TABLE_FIELDS[table]:
             cleaned["cs_uid"] = gen_uid
         if "uid" in TABLE_FIELDS[table]:
             cleaned["uid"] = gen_uid
+
+    # Auto-generate RS UID if missing
+    if not cleaned.get("uid2") and not cleaned.get("rs_uid"):
+        jl = cleaned.get("rs_jl") or cleaned.get("cs_jl") or ""
+        pno = cleaned.get("rs_plot_no") or ""
+        if pno:
+            gen_uid = f"{jl}{pno}" if jl else str(pno)
+            if "rs_uid" in TABLE_FIELDS[table]:
+                cleaned["rs_uid"] = gen_uid
+            if "uid2" in TABLE_FIELDS[table]:
+                cleaned["uid2"] = gen_uid
 
     records.insert(0, cleaned)
     db.invalidate_cache()
@@ -697,6 +778,8 @@ def update_record(table: str, record_id: int, data: Dict[str, Any]) -> Optional[
                     continue
                 if field in data:
                     r[field] = data[field]
+            if "beat_name" in data and data["beat_name"]:
+                r["beat_name"] = normalize_beat(data["beat_name"])
             if "cs_uid" in r and "uid" not in r: r["uid"] = r["cs_uid"]
             if "rs_uid" in r and "uid2" not in r: r["uid2"] = r["rs_uid"]
             db.invalidate_cache()

@@ -77,8 +77,8 @@
       fields: [
         { name: 'cs_plot_no', label: 'CS Plot No', type: 'text', required: true },
         { name: 'rs_plot_no', label: 'RS Plot No', type: 'text' },
-        { name: 'cs_uid', label: 'CS UID (UID)', type: 'text' },
-        { name: 'rs_uid', label: 'RS UID (UID2)', type: 'text' },
+        { name: 'cs_uid', label: 'CS UID (UID)', type: 'text', hiddenInForm: true },
+        { name: 'rs_uid', label: 'RS UID (UID2)', type: 'text', hiddenInForm: true },
         { name: 'mouza', label: 'Mouza', type: 'text', required: true },
         { name: 'cs_jl', label: 'CS JL No', type: 'text' },
         { name: 'rs_jl', label: 'RS JL No', type: 'text' },
@@ -101,8 +101,8 @@
         { name: 'mouza', label: 'Mouza', type: 'text', required: true },
         { name: 'cs_plot_no', label: 'CS Plot No', type: 'text', required: true },
         { name: 'rs_plot_no', label: 'RS Plot No', type: 'text' },
-        { name: 'cs_uid', label: 'CS UID (UID)', type: 'text' },
-        { name: 'rs_uid', label: 'RS UID (UID2)', type: 'text' },
+        { name: 'cs_uid', label: 'CS UID (UID)', type: 'text', hiddenInForm: true },
+        { name: 'rs_uid', label: 'RS UID (UID2)', type: 'text', hiddenInForm: true },
         { name: 'encroached_area_acre', label: 'Encroached Area (Acres)', type: 'number', step: '0.0001', required: true },
         { name: 'structure_type', label: 'Structure / Land Use Type', type: 'text' },
         { name: 'action_taken', label: 'Action Taken / Legal Case', type: 'text' },
@@ -880,6 +880,12 @@
         else if (f.name === 'uid') val = record.cs_uid || '';
       }
 
+      // If marked hiddenInForm, render as hidden input (auto-generated in background, not cluttering the form)
+      if (f.hiddenInForm) {
+        html += `<input type="hidden" id="field-${f.name}" name="${f.name}" value="${escapeAttr(val)}">`;
+        return;
+      }
+
       const isCol2 = ['encroacher_name', 'remarks'].includes(f.name);
       const colClass = isCol2 ? 'dossier-col-2' : '';
       const stepAttr = f.step ? `step="${f.step}"` : '';
@@ -1177,11 +1183,34 @@
     setupPlotAutocomplete(csPlotInput, 'cs_plot_no');
     setupPlotAutocomplete(rsPlotInput, 'rs_plot_no');
 
+    // Auto-compute UID when plot inputs change
+    if (csPlotInput) {
+      csPlotInput.addEventListener('input', () => {
+        const plot = csPlotInput.value.trim();
+        const jl = csJlInput ? csJlInput.value.trim() : (lastMatchedPlotData ? lastMatchedPlotData.cs_jl : '');
+        if (plot && csUidInput) {
+          csUidInput.value = computeUid(plot, jl);
+          updateUidBadge('cs_uid', true);
+        }
+      });
+    }
+
+    if (rsPlotInput) {
+      rsPlotInput.addEventListener('input', () => {
+        const plot = rsPlotInput.value.trim();
+        const jl = rsJlInput ? rsJlInput.value.trim() : (lastMatchedPlotData ? (lastMatchedPlotData.rs_jl || lastMatchedPlotData.cs_jl) : '');
+        if (plot && rsUidInput) {
+          rsUidInput.value = computeUid(plot, jl);
+          updateUidBadge('rs_uid', true);
+        }
+      });
+    }
+
     // Link JL changes in parcel_info to auto-recompute UID
     if (csJlInput) {
       csJlInput.addEventListener('input', () => {
         if (csPlotInput && csUidInput && csPlotInput.value.trim()) {
-          csUidInput.value = `${csJlInput.value.trim()}${csPlotInput.value.trim()}`;
+          csUidInput.value = computeUid(csPlotInput.value.trim(), csJlInput.value.trim());
           updateUidBadge('cs_uid', true);
         }
       });
@@ -1189,8 +1218,35 @@
     if (rsJlInput) {
       rsJlInput.addEventListener('input', () => {
         if (rsPlotInput && rsUidInput && rsPlotInput.value.trim()) {
-          rsUidInput.value = `${rsJlInput.value.trim()}${rsPlotInput.value.trim()}`;
+          rsUidInput.value = computeUid(rsPlotInput.value.trim(), rsJlInput.value.trim());
           updateUidBadge('rs_uid', true);
+        }
+      });
+    }
+
+    // Auto-suggest canonical beat from beat_boundaries DB when Mouza is selected
+    const MOUZA_BEAT_MAP = {
+      'mahona bhabanipur': 'Bhabanipur Beat',
+      'uttar salna': 'Baupara Beat',
+      'baupara': 'Baupara Beat',
+      'bahadurpur': 'Baupara Beat',
+      'dogri': 'BK Bari Beat',
+      'bk bari': 'BK Bari Beat',
+      'b k bari': 'BK Bari Beat',
+      'bankhoira': 'Bankhoira Beat',
+      'araish prashad': 'Baupara Beat',
+      'baruipara': 'Baruipara Beat'
+    };
+
+    if (mouzaInput) {
+      mouzaInput.addEventListener('change', () => {
+        if (beatInput && !beatInput.value.trim()) {
+          const mClean = mouzaInput.value.trim().toLowerCase();
+          const defBeat = MOUZA_BEAT_MAP[mClean];
+          if (defBeat) {
+            beatInput.value = defBeat;
+            flashField(beatInput);
+          }
         }
       });
     }
@@ -1209,6 +1265,16 @@
     formData.forEach((val, key) => {
       payload[key] = val.trim();
     });
+
+    // Auto-generate UIDs if missing from form
+    if (!payload.cs_uid && payload.cs_plot_no) {
+      const jl = payload.cs_jl || '';
+      payload.cs_uid = jl ? `${jl}${payload.cs_plot_no}` : payload.cs_plot_no;
+    }
+    if (!payload.rs_uid && payload.rs_plot_no) {
+      const jl = payload.rs_jl || payload.cs_jl || '';
+      payload.rs_uid = jl ? `${jl}${payload.rs_plot_no}` : payload.rs_plot_no;
+    }
 
     const isEdit = Boolean(state.editingRecordId);
     const url = isEdit 
