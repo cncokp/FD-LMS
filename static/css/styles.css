@@ -1253,7 +1253,7 @@ input:checked + .slider.blue {
 }
 
 input:checked + .slider.purple {
-  background-color: #a855f7;
+  background-color: #c084fc;
 }
 
 input:checked + .slider.teal {
@@ -1301,7 +1301,7 @@ input:checked + .slider:before {
 }
 
 .dot.green { background-color: #10b981; }
-.dot.purple { background-color: #a855f7; }
+.dot.purple { background-color: #c084fc; }
 .dot.yellow { background-color: #f59e0b; }
 .dot.grey { background-color: #64748b; }
 .dot.slate { background-color: #64748b; }

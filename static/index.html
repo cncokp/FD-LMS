@@ -12,11 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin>
-  <link rel="preconnect" href="https://mt0.google.com" crossorigin>
-  <link rel="preconnect" href="https://mt1.google.com" crossorigin>
-  <link rel="preconnect" href="https://mt2.google.com" crossorigin>
-  <link rel="preconnect" href="https://mt3.google.com" crossorigin>
-  <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossorigin>
+  <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
 
   <!-- Preload critical local assets -->
   <link rel="preload" href="/static/bdfd_logo.svg" as="image" type="image/svg+xml">
@@ -96,21 +92,17 @@
           <div class="basemap-picker-popup hidden" id="basemapPickerPopup">
             <div class="basemap-picker-header">Basemap</div>
             <div class="basemap-picker-options">
-              <button class="basemap-picker-item active" data-basemap="satellite">
-                <i class="fa-solid fa-satellite"></i>
-                <span>Satellite</span>
+              <button class="basemap-picker-item active" data-basemap="esri">
+                <i class="fa-solid fa-earth-americas"></i>
+                <span>ESRI Imagery</span>
               </button>
               <button class="basemap-picker-item" data-basemap="hybrid">
                 <i class="fa-solid fa-layer-group"></i>
-                <span>Hybrid</span>
+                <span>ESRI Hybrid</span>
               </button>
-              <button class="basemap-picker-item" data-basemap="street">
+              <button class="basemap-picker-item" data-basemap="osm">
                 <i class="fa-solid fa-road"></i>
-                <span>Street (Lite)</span>
-              </button>
-              <button class="basemap-picker-item" data-basemap="esri">
-                <i class="fa-solid fa-earth-americas"></i>
-                <span>ESRI Imagery</span>
+                <span>OpenStreetMap</span>
               </button>
             </div>
           </div>
@@ -363,8 +355,8 @@
   </script>
   <!-- Leaflet & App Scripts — defer keeps HTML parsing non-blocking; order is preserved -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-  <script src="/static/js/dossier.js?v=20260912_15" defer></script>
-  <script src="/static/js/map.js?v=20260912_15" defer></script>
-  <script src="/static/js/app.js?v=20260912_15" defer></script>
+  <script src="/static/js/dossier.js?v=20260913_02" defer></script>
+  <script src="/static/js/map.js?v=20260913_02" defer></script>
+  <script src="/static/js/app.js?v=20260913_02" defer></script>
 </body>
 </html>

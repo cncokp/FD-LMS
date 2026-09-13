@@ -260,7 +260,7 @@ function _dossierCacheSet(plotId, data) {
 let _bulkDossierMap = null; // null = not yet loaded; keyed by cs_uid
 let _bulkDossierRsMap = null; // null = not yet loaded; keyed by rs_uid
 
-const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier_v4';
+const BULK_DOSSIER_CACHE_KEY = 'bulk_dossier_v5';
 const BULK_DOSSIER_TTL       = 86400 * 1000; // 24 hours
 
 async function _storeBulkInMemory(payload) {
@@ -309,7 +309,7 @@ async function loadBulkDossier() {
 
 const MapEngine = {
   map: null,
-  currentBasemap: 'satellite',
+  currentBasemap: 'esri',
   basemapLayers: {},
   canvasRenderer: null,
   encroachRenderer: null,
@@ -651,40 +651,43 @@ const MapEngine = {
       updateInterval: 150
     };
 
+    const esriLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      ...tileOptions,
+      subdomains: ['server', 'services'],
+      maxNativeZoom: 19,
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+    });
+
+    const esriBoundaries = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      ...tileOptions,
+      subdomains: ['server', 'services'],
+      maxNativeZoom: 19
+    });
+
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      ...tileOptions,
+      subdomains: ['a', 'b', 'c'],
+      maxNativeZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    });
+
     this.basemapLayers = {
-      satellite: L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-        ...tileOptions,
-        subdomains: ['0', '1', '2', '3']
-      }),
-      hybrid: L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-        ...tileOptions,
-        subdomains: ['0', '1', '2', '3']
-      }),
-      street: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        ...tileOptions,
-        subdomains: ['a', 'b', 'c', 'd'],
-        maxNativeZoom: 19
-      }),
-      esri: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        ...tileOptions,
-        subdomains: ['server', 'services'],
-        maxNativeZoom: 19
-      }),
-      osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        ...tileOptions,
-        subdomains: ['a', 'b', 'c'],
-        maxNativeZoom: 19
-      })
+      esri: esriLayer,
+      satellite: esriLayer,
+      hybrid: L.layerGroup([esriLayer, esriBoundaries]),
+      osm: osmLayer,
+      street: osmLayer
     };
 
     if (!this.basemapLayers[this.currentBasemap]) {
-      this.currentBasemap = 'satellite';
+      this.currentBasemap = 'esri';
     }
     this.basemapLayers[this.currentBasemap].addTo(this.map);
   },
 
   setBasemap(name) {
-    if (name === 'osm') name = 'street';
+    if (name === 'satellite') name = 'esri';
+    if (name === 'street') name = 'osm';
     if (!this.basemapLayers[name] || this.currentBasemap === name) return;
     this.map.removeLayer(this.basemapLayers[this.currentBasemap]);
     this.basemapLayers[name].addTo(this.map);
@@ -1257,11 +1260,11 @@ const MapEngine = {
       renderer: this.canvasRenderer,
       interactive: true,
       style: () => ({
-        color: '#8b5cf6',
-        weight: 1.8,
-        opacity: 0.85,
-        fillColor: '#a855f7',
-        fillOpacity: 0.08,
+        color: '#e9d5ff',
+        weight: 1.0,
+        opacity: 0.65,
+        fillColor: '#f3e8ff',
+        fillOpacity: 0.03,
         dashArray: '3, 3',
         interactive: true
       }),

@@ -194,6 +194,7 @@ const Dossier = {
         <div class="dossier-card-title">
           <span>Parcel Identification</span>
         </div>
+        ${encroachBanner}
         <div class="dossier-grid">
           <div class="dossier-prop">
             <span class="prop-label">Plot Number</span>
@@ -274,7 +275,7 @@ const Dossier = {
   renderRSPlot(data) {
     const p = data.plot || {};
     const pi = data.parcel_info;
-    const enc = data.encroachment || {};
+    const enc = data.encroachment || (pi && pi.encroachment) || {};
 
     this.currentPlotId = p.id;
 
@@ -342,10 +343,10 @@ const Dossier = {
       }).join('');
 
       csDetailsHtml = `
-        <!-- Linked CS Plots Details -->
+        <!-- CS Plots Details -->
         <div class="dossier-card">
           <div class="dossier-card-title">
-            <span>Linked CS Plots (Cadastral Survey)</span>
+            <span>CS Plots Details</span>
             <span style="font-size: 10.5px; color: #64748b; font-weight: 400; text-transform: none;">${pi.linked_cs_plots.length} linked</span>
           </div>
           <div class="rs-table-container">
@@ -369,36 +370,63 @@ const Dossier = {
     }
 
     // Encroachment Section
+    let encroachBanner = '';
     let encroachHtml = '';
     if (enc && enc.has_encroachment && enc.records && enc.records.length > 0) {
-      const recRows = enc.records.map((r, idx) => `
-        <div class="encroach-record-item">
-          <div class="encroach-rec-top">
-            <span class="encroach-idx">#${idx + 1}</span>
-            <span class="encroach-name">${r.encroacher_name || 'Unidentified Encroacher'}</span>
-            <span class="encroach-area-pill">${Number(r.encroached_area_acre || 0).toFixed(2)} Ac</span>
-          </div>
-          <div class="encroach-rec-details">
-            <div class="encroach-detail-row">
-              <span class="enc-label">Structure:</span>
-              <span class="enc-val">${r.structure_type || 'N/A'}</span>
-            </div>
-            <div class="encroach-detail-row">
-              <span class="enc-label">Action Taken:</span>
-              <span class="enc-val">${r.action_taken || 'No action recorded'}</span>
-            </div>
-          </div>
+      encroachBanner = `
+        <div class="encroach-banner">
+          <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444; font-size: 12px;"></i>
+          <span>Encroached Land: <strong style="color: #fca5a5;">${Number(enc.total_encroached_acre || 0).toFixed(2)} Ac</strong> across <strong style="color: #fca5a5;">${enc.count} Cases</strong></span>
         </div>
-      `).join('');
+      `;
+
+      const encRows = enc.records.map(r => {
+        const areaStr = r.encroached_area_acre != null ? Number(r.encroached_area_acre).toFixed(2) : '-';
+        const rawAction = (r.action_taken || '').trim().replace(/\n/g, ' ');
+        const actionDisplay = rawAction 
+          ? `<span title="${rawAction.replace(/"/g, '&quot;')}">${rawAction.length > 28 ? rawAction.substring(0, 26) + '...' : rawAction}</span>`
+          : '<span style="color: #64748b;">-</span>';
+        const rawName = (r.encroacher_name || 'N/A').trim().replace(/\n/g, ' ');
+        const nameDisplay = `<span title="${rawName.replace(/"/g, '&quot;')}">${rawName.length > 32 ? rawName.substring(0, 30) + '...' : rawName}</span>`;
+
+        return `
+          <tr>
+            <td class="td-encroacher">${nameDisplay}</td>
+            <td class="mono td-bold">${r.cs_plot_no || '-'}</td>
+            <td class="mono td-khatian">${r.rs_khatian || '-'}</td>
+            <td class="mono td-danger" style="text-align: right;">${areaStr}</td>
+            <td class="td-structure">${r.structure_type || '-'}</td>
+            <td class="td-action">${actionDisplay}</td>
+          </tr>
+        `;
+      }).join('');
 
       encroachHtml = `
-        <div class="dossier-card card-alert">
-          <div class="dossier-card-title title-alert">
-            <span><i class="fa-solid fa-triangle-exclamation"></i> Encroachment Cases</span>
-            <span class="badge-alert-count">${enc.count} Cases &bull; ${enc.total_encroached_acre} Ac</span>
+        <!-- Encroachment Details Card -->
+        <div class="dossier-card card-encroach">
+          <div class="dossier-card-title">
+            <span style="display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span>Encroachment Details</span>
+            </span>
+            <span class="badge-stat-danger">${enc.count} Cases &bull; ${Number(enc.total_encroached_acre || 0).toFixed(2)} Ac</span>
           </div>
-          <div class="encroach-records-list">
-            ${recRows}
+          <div class="rs-table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Encroacher Name & Address</th>
+                  <th>CS Plot</th>
+                  <th>Khatian</th>
+                  <th style="text-align: right;">Area (Ac)</th>
+                  <th>Structure</th>
+                  <th>Action Taken</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${encRows}
+              </tbody>
+            </table>
           </div>
         </div>
       `;
@@ -409,8 +437,9 @@ const Dossier = {
       <div class="dossier-card">
         <div class="dossier-card-title">
           <span>RS Parcel Identification</span>
-          <span style="font-size: 10px; color: #a855f7; font-weight: 700; text-transform: uppercase;">RS Cadastre</span>
+          <span style="font-size: 10px; color: #c084fc; font-weight: 700; text-transform: uppercase;">RS Cadastre</span>
         </div>
+        ${encroachBanner}
         <div class="dossier-grid">
           <div class="dossier-prop">
             <span class="prop-label">RS Plot No</span>
