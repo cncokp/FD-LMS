@@ -5,18 +5,33 @@
  */
 
 const Dossier = {
-  drawer: document.getElementById('dossierDrawer'),
-  title: document.getElementById('dossierTitle'),
-  badge: document.getElementById('dossierBadge'),
-  content: document.getElementById('dossierContent'),
+  get drawer() {
+    return document.getElementById('dossierDrawer');
+  },
+  get title() {
+    return document.getElementById('dossierTitle');
+  },
+  get badge() {
+    return document.getElementById('dossierBadge');
+  },
+  get content() {
+    return document.getElementById('dossierContent');
+  },
   currentPlotId: null,
 
   open() {
-    if (this.drawer) this.drawer.classList.remove('hidden');
+    const el = this.drawer;
+    if (el) {
+      el.classList.remove('hidden');
+      el.style.display = 'flex';
+    }
   },
 
   close() {
-    if (this.drawer) this.drawer.classList.add('hidden');
+    const el = this.drawer;
+    if (el) {
+      el.classList.add('hidden');
+    }
   },
 
   /**
@@ -279,6 +294,7 @@ const Dossier = {
     const p = data.plot || {};
     const pi = data.parcel_info;
     const enc = data.encroachment || (pi && pi.encroachment) || {};
+    const rUid = String(p.rs_uid || p.uid || (pi && pi.rs_uid) || '');
 
     this.currentPlotId = p.id;
 
